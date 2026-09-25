@@ -93,10 +93,29 @@ export async function fetchInstalledApps() {
 }
 export function buildPermissionsCsv(apps) {
     const escape = (value) => `"${String(value).replace(/"/g, '""')}"`;
-    const lines = ['app_identifier,permissions,permission_count'];
+    const lines = ['app_identifier,top_permissions,total_permission_count'];
+
     (apps || []).forEach((app) => {
-        lines.push(`${app.id},${escape(app.permissions.join('|'))},${app.permissions.length}`);
+        const relevantPerms = app.permissions
+            .map(p => {
+                if (p.startsWith('android.permission.')) {
+                    return p.replace('android.permission.', '');
+                }
+                if (p.includes('.permission.') || p.includes('.provider')) {
+                    return null;
+                }
+                return p;
+            })
+            .filter(Boolean);
+
+        const sorted = relevantPerms.sort((a, b) => {
+            return (isSensitivePermission(b) ? 1 : 0) - (isSensitivePermission(a) ? 1 : 0);
+        });
+
+        const cappedPerms = sorted.slice(0, 15);
+        lines.push(`${app.id},${escape(cappedPerms.join('|'))},${app.permissions.length}`);
     });
+
     return lines.join('\n');
 }
 
@@ -120,7 +139,7 @@ export async function requestAiScan(csv) {
         if (SIMULATED_BACKEND) {
             await sleep(SIMULATED_LATENCY_MS);
             const response = simulateServerResponse(csv);
-            if (__DEV__) console.log('[AI_SCAN] csv:\n' + csv, '\n[AI_SCAN] dummy response:', response);
+            // if (__DEV__) console.log('[AI_SCAN] csv:\n' + csv, '\n[AI_SCAN] dummy response:', response);
             return response;
         }
         const res = await fetch(AI_SCAN_ENDPOINT, {
@@ -209,7 +228,6 @@ export function AccessListFunc() {
         closeApp: useCallback(() => setSelected(null), []),
     };
 }
-
 export function useAiScan(apps) {
     const [phase, setPhase] = useState('idle');
     const [items, setItems] = useState([]);
@@ -220,9 +238,30 @@ export function useAiScan(apps) {
         if (!apps?.length || phase === 'scanning') return;
         setPhase('scanning');
         setError(null);
+
         try {
-            const payload = buildPermissionsCsv(apps);
+            const sizeOf = (app) =>
+                app.id.length +
+                app.permissions.join('|').length +
+                String(app.permissions.length).length;
+
+            const heavyApps = [...apps]
+                .sort((a, b) => sizeOf(b) - sizeOf(a))
+                .slice(0, 10);
+
+            const payload = buildPermissionsCsv(heavyApps);
+
+            if (__DEV__) {
+                console.log('[HEAVY_10_PAYLOAD]', {
+                    apps: heavyApps.length,
+                    chars: payload.length,
+                    approxTokens: Math.ceil(payload.length / 4),
+                    payload,
+                });
+            }
+
             const result = await requestAiScan(payload);
+
             setCsv(payload);
             setItems(parseScanResponse(result, apps));
             setPhase('done');
@@ -232,9 +271,16 @@ export function useAiScan(apps) {
         }
     }, [apps, phase]);
 
-    const dismiss = useCallback(() => { setPhase('idle'); setItems([]); setError(null); }, []);
+    const dismiss = useCallback(() => {
+        setPhase('idle');
+        setItems([]);
+        setError(null);
+    }, []);
 
-    return { phase, items, csv, error, scan, dismiss, modalVisible: phase === 'done' || phase === 'error' };
+    return {
+        phase, items, csv, error, scan, dismiss,
+        modalVisible: phase === 'done' || phase === 'error',
+    };
 }
 
 export function summarizePermissions(app, visible = 2) {
