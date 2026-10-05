@@ -1,13 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, NativeModules } from 'react-native';
 import { FLAGS, LIMITS, RISK_FLAGS } from '../../constants';
-import { timeAgo } from './listFunc';
+import { timeAgo } from './list-function';
 
 const { InstalledApps } = NativeModules;
 const DAY = 864e5;
 
 export default function SourceDetailsFunc(route, navigation) {
     const app = route.params.app;
+    const [confirmVisible, setConfirmVisible] = useState(false);
 
     const rows = useMemo(() => {
         const has = (f) => app.flags.includes(f);
@@ -42,11 +43,17 @@ export default function SourceDetailsFunc(route, navigation) {
     return {
         app, rows, unsafeText,
         back: () => navigation.goBack(),
-        open: async () => { if (!(await InstalledApps.openApp(app.packageName))) Alert.alert('Cannot open', 'This app has no launchable activity.'); },
-        more: () => InstalledApps.openSettings(app.packageName),
-        uninstall: () => Alert.alert(`Uninstall ${app.label}?`, 'It will be removed from this device.', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Uninstall', style: 'destructive', onPress: () => { InstalledApps.uninstallApp(app.packageName); navigation.goBack(); } },
-        ]),
+        open: async () => { if (!(await InstalledApps?.openApp(app.packageName))) Alert.alert('Cannot open', 'This app has no launchable activity.'); },
+        more: () => InstalledApps?.openSettings(app.packageName),
+        confirmVisible,
+        showConfirm: () => setConfirmVisible(true),
+        hideConfirm: () => setConfirmVisible(false),
+        confirmUninstall: () => {
+            setConfirmVisible(false);
+            if (InstalledApps?.uninstallApp) {
+                InstalledApps.uninstallApp(app.packageName);
+            }
+            navigation.goBack();
+        },
     };
 }

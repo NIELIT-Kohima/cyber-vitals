@@ -211,9 +211,9 @@ function assertShape(json) {
 
 export const UPLOAD_COPY = Object.freeze({
     capabilities: [
-        'Detects AI-generated faces & portraits',
-        'Flags deepfake manipulation artifacts',
-        'Identifies synthetic texture patterns',
+        'AI faces',
+        'Flags deepfake',
+        'Synthetic textures',
     ],
     privacy: 'Uploaded images are analyzed for AI-generated content and are not stored or shared.',
 });

@@ -3,11 +3,32 @@ import {
     Animated, Platform, BackHandler, Dimensions, Image, Pressable, SafeAreaView, ScrollView,
     StatusBar, StyleSheet, Text, View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants';
-import { AccessDetailsFunc } from './detailsFunc';
+import { AccessDetailsFunc } from './details-function';
 
 const TONE_BG = { accent: COLORS.accentDim, warn: COLORS.warnDim, danger: COLORS.dangerDim };
 const TONE_FG = { accent: COLORS.accent, warn: COLORS.warn, danger: COLORS.danger };
+
+function renderFlagIcon(key, color) {
+    switch (key) {
+        case 'verified':
+            return <Ionicons name="shield-checkmark" size={12.5} color={color} />;
+        case 'oem':
+        case 'preinstalled':
+            return <Ionicons name="checkmark-circle" size={12.5} color={color} />;
+        case 'unknownOrigin':
+            return <Ionicons name="warning" size={12.5} color={color} />;
+        case 'debuggable':
+            return <Ionicons name="bug" size={12.5} color={color} />;
+        case 'outdatedSdk':
+            return <Ionicons name="alert-circle" size={12.5} color={color} />;
+        case 'stale':
+            return <Ionicons name="time-outline" size={12.5} color={color} />;
+        default:
+            return <Ionicons name="alert-circle" size={12.5} color={color} />;
+    }
+}
 
 function Icon({ name, size = 22, color = COLORS.text, strokeWidth = 1.6 }) {
     const s = strokeWidth;
@@ -181,26 +202,27 @@ const PermissionRow = ({ item }) => (
     </View>
 );
 
-export default function AppDetailScreen({ app, onBack }) {
-    const { sections, riskHits, flags, header, banner, openInSettings } = AccessDetailsFunc(app);
+export default function AppDetailScreen({ app, onBack, route, navigation }) {
+    const targetApp = app || route?.params?.app;
+    const handleBack = onBack || (() => navigation?.goBack());
+    const { sections, riskHits, flags, header, banner, openInSettings } = AccessDetailsFunc(targetApp);
     const slide = useRef(new Animated.Value(Dimensions.get('window').width)).current;
-    const STATUS_PAD = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
     useEffect(() => {
         Animated.spring(slide, { toValue: 0, useNativeDriver: true, speed: 30, bounciness: 0 }).start();
     }, [slide]);
 
     useEffect(() => {
-        const sub = BackHandler.addEventListener('hardwareBackPress', () => { onBack(); return true; });
+        const sub = BackHandler.addEventListener('hardwareBackPress', () => { if (handleBack) handleBack(); return true; });
         return () => sub.remove();
-    }, [onBack]);
+    }, [handleBack]);
 
     return (
         <Animated.View style={[styles.root, { transform: [{ translateX: slide }] }]}>
-            <SafeAreaView style={[styles.root, { paddingTop: STATUS_PAD }]}>
-                <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+            <View style={styles.root}>
+                <StatusBar barStyle="dark-content" backgroundColor="#fff" />
                 <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-                    <Pressable onPress={onBack} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Go back">
-                        <Icon name="chevron-left" size={18} color={COLORS.text} />
+                    <Pressable onPress={handleBack} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Go back">
+                        <Icon name="chevron-left" size={18} color="#fff" />
                     </Pressable>
 
                     <View style={styles.headerRow}>
@@ -212,7 +234,8 @@ export default function AppDetailScreen({ app, onBack }) {
                             <View style={styles.flagRow}>
                                 {flags.map((f) => (
                                     <View key={f.key} style={[styles.flagChip, { backgroundColor: TONE_BG[f.tone] }]}>
-                                        <Text style={[styles.flagChipText, { color: TONE_FG[f.tone] }]}>{f.tick} {f.label}</Text>
+                                        {renderFlagIcon(f.key, TONE_FG[f.tone] || COLORS.text)}
+                                        <Text style={[styles.flagChipText, { color: TONE_FG[f.tone] || COLORS.text }]}>{f.label}</Text>
                                     </View>
                                 ))}
                             </View>
@@ -240,41 +263,35 @@ export default function AppDetailScreen({ app, onBack }) {
                         ))}
                     </View>
 
-                    <Text style={styles.otherLabel}>Other permissions</Text>
+                    <Text style={styles.sectionTitle}>Other permissions</Text>
                     <View style={styles.permList}>
                         {sections.other.map((item) => (
                             <PermissionRow key={item.id} item={item} />
                         ))}
                     </View>
-
-                    <View style={styles.banner}>
-                        <Icon name="shield" size={26} color={COLORS.accent} />
-                        <Text style={styles.bannerText}>{banner.message}</Text>
-                    </View>
-
                     <Pressable style={styles.settingsLink} onPress={openInSettings} accessibilityRole="button">
                         <Text style={styles.settingsLinkText}>Manage permissions in system settings</Text>
-                        <Icon name="chevron-right" size={14} color={COLORS.accent} />
                     </Pressable>
+
                 </ScrollView>
-            </SafeAreaView>
+            </View>
         </Animated.View>
     );
 }
 
 const styles = StyleSheet.create({
-    root: { flex: 1, backgroundColor: COLORS.bg },
+    root: { flex: 1, backgroundColor: COLORS.bg, paddingBottom: 60 },
     safe: { flex: 1 },
-    scroll: { padding: 16, paddingBottom: 40 },
-    backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.surfaceHigh, alignItems: 'center', justifyContent: 'center' },
+    scroll: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 45 },
+    backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
     headerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 18 },
     headerText: { flex: 1, marginLeft: 14 },
     appName: { color: COLORS.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.4 },
-    appVersion: { color: COLORS.textDim, fontSize: 14, marginTop: 6 },
-    appDeveloper: { color: COLORS.textDim, fontSize: 13, marginTop: 4 },
-    flagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-    flagChip: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
-    flagChipText: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.3 },
+    appVersion: { color: COLORS.textDim, fontSize: 14 },
+    appDeveloper: { color: COLORS.textDim, fontSize: 13 },
+    flagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+    flagChip: { flexDirection: 'row', alignItems: 'center', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 4 },
+    flagChipText: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.3, marginLeft: 4 },
     divider: { height: 1, backgroundColor: COLORS.border, marginTop: 18 },
     sectionTitle: { color: COLORS.text, fontSize: 20, fontWeight: '800', marginTop: 18 },
     sectionSubtitle: { color: COLORS.textDim, fontSize: 13.5, marginTop: 4 },
@@ -288,8 +305,6 @@ const styles = StyleSheet.create({
     permLabel: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
     permDesc: { color: COLORS.textDim, fontSize: 12.5, lineHeight: 17, marginTop: 3 },
     otherLabel: { color: COLORS.textDim, fontSize: 13, marginTop: 18, marginBottom: -2 },
-    banner: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.accentDim, borderRadius: 16, padding: 16, marginTop: 22 },
-    bannerText: { color: COLORS.accent, fontSize: 14, fontWeight: '700', marginLeft: 12 },
-    settingsLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border },
-    settingsLinkText: { color: COLORS.accent, fontSize: 13, fontWeight: '700', marginRight: 4 },
+    settingsLink: { alignItems: 'center', justifyContent: 'center', marginTop: 14, paddingVertical: 15, borderRadius: 12, backgroundColor: COLORS.accentDim },
+    settingsLinkText: { color: COLORS.accent, fontSize: 14, fontWeight: '700', marginRight: 4 },
 });

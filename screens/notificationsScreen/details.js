@@ -12,9 +12,12 @@ import {
     Image,
     View,
     Platform,
+    TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import RBSheet from 'react-native-raw-bottom-sheet';
 import { COLORS } from '../../constants';
-import * as F from './notificationFunc';
+import * as F from './details-function';
 
 
 const TONE = {
@@ -253,7 +256,8 @@ export default function NotificationScreen() {
     const [meta, setMeta] = useState(null);
     const [listener, setListener] = useState({ supported: true, granted: false, checked: false });
     const [win, setWin] = useState('all');
-    const [pkgFilter, setPkgFilter] = useState(null);
+    const [selectedPkgs, setSelectedPkgs] = useState([]);
+    const appSheetRef = useRef(null);
     const [page, setPage] = useState(1);
     const [selecting, setSelecting] = useState(false);
     const [selected, setSelected] = useState([]);
@@ -266,7 +270,6 @@ export default function NotificationScreen() {
     const [downloading, setDownloading] = useState(false);
     const [liModal, setLiModal] = useState(null);
     const [trModal, setTrModal] = useState(null);
-    const [appSheet, setAppSheet] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [snack, setSnack] = useState(null);
     const [warn, setWarn] = useState(null);
@@ -328,7 +331,7 @@ export default function NotificationScreen() {
         });
     }, [boot, reload]);
 
-    const filtered = useMemo(() => F.filterItems(items, win, pkgFilter), [items, win, pkgFilter]);
+    const filtered = useMemo(() => F.filterItems(items, win, selectedPkgs), [items, win, selectedPkgs]);
     const visible = useMemo(
         () => (win === 'all' ? filtered.slice(0, page * F.PAGE_SIZE) : filtered),
         [filtered, win, page],
@@ -336,7 +339,7 @@ export default function NotificationScreen() {
     const stats = useMemo(() => computeStatsSafe(items), [items]);
     const apps = useMemo(() => F.appOptions(F.filterItems(items, win, null)), [items, win]);
 
-    useEffect(() => setPage(1), [win, pkgFilter]);
+    useEffect(() => setPage(1), [win, selectedPkgs]);
 
     const toggleSelect = useCallback(
         (id) => {
@@ -465,7 +468,7 @@ export default function NotificationScreen() {
         if (mounted.current) setRefreshing(false);
     }, [reload]);
 
-    const quickScan = useCallback(() => runPipeline(F.autoPickIds(F.filterItems(items, win === 'all' ? 'h24' : win, pkgFilter))), [runPipeline, items, win, pkgFilter]);
+    const quickScan = useCallback(() => runPipeline(F.autoPickIds(F.filterItems(items, win === 'all' ? 'h24' : win, selectedPkgs))), [runPipeline, items, win, selectedPkgs]);
 
     const resolveTr = useCallback(
         async (action) => {
@@ -497,7 +500,9 @@ export default function NotificationScreen() {
     const listHeader = (
         <View>
             <View style={st.header}>
-                <Text style={st.h1}>Notification Screening</Text>
+                <Text style={st.h1}>
+                    Notification <Text style={{ color: COLORS.accent }}>Security</Text>
+                </Text>
                 <Text style={st.h2}>Smarter alerts. Safer you.</Text>
             </View>
 
@@ -551,21 +556,23 @@ export default function NotificationScreen() {
                 </View>
             </View>
 
-            <Pressable
-                style={st.permRow}
-                onPress={() => (listener.granted ? null : F.openListenerSettings().then(() => setTimeout(async () => setListener({ ...(await F.getListenerStatus()), checked: true }), 800)))}
-            >
-                <View style={[st.permIcon, { backgroundColor: COLORS.accentDim }]}>
-                    <Text style={{ color: COLORS.accent }}>ⓘ</Text>
-                </View>
-                <View style={st.permText}>
-                    <Text style={st.permTitle}>Notification Access</Text>
-                    <Text style={st.permSub}>Required to scan your notifications</Text>
-                </View>
-                <Text style={{ color: listener.granted ? COLORS.accent : COLORS.warn }}>
-                    {listener.granted ? 'Granted' : listener.checked ? 'Grant →' : '…'}
-                </Text>
-            </Pressable>
+            {!listener.granted && (
+                <Pressable
+                    style={st.permRow}
+                    onPress={() => F.openListenerSettings().then(() => setTimeout(async () => setListener({ ...(await F.getListenerStatus()), checked: true }), 800))}
+                >
+                    <View style={[st.permIcon, { backgroundColor: COLORS.accentDim }]}>
+                        <Text style={{ color: COLORS.accent }}>ⓘ</Text>
+                    </View>
+                    <View style={st.permText}>
+                        <Text style={st.permTitle}>Notification Access</Text>
+                        <Text style={st.permSub}>Required to scan your notifications</Text>
+                    </View>
+                    <Text style={{ color: COLORS.warn }}>
+                        {listener.checked ? 'Grant →' : '…'}
+                    </Text>
+                </Pressable>
+            )}
 
             {!meta?.hasScanned && items.length > 0 && (
                 <View style={st.firstRun}>
@@ -581,10 +588,24 @@ export default function NotificationScreen() {
                             <Text style={[st.filterChipText, win === w.key && { color: COLORS.accent }]}>{w.label}</Text>
                         </Pressable>
                     ))}
-                    <Pressable style={[st.filterChip, pkgFilter && { backgroundColor: COLORS.accentDim, borderColor: COLORS.accent }]} onPress={() => setAppSheet(true)}>
-                        <Text style={[st.filterChipText, pkgFilter && { color: COLORS.accent }]} numberOfLines={1}>
-                            {pkgFilter ? (apps.find((a) => a.pkg === pkgFilter)?.label || 'App') : 'All apps'}
-                        </Text>
+                    <Pressable
+                        style={[
+                            st.filterChip,
+                            st.filterIconChip,
+                            selectedPkgs.length > 0 && { backgroundColor: COLORS.accentDim, borderColor: COLORS.accent },
+                        ]}
+                        onPress={() => appSheetRef.current?.open()}
+                    >
+                        <Ionicons
+                            name="filter"
+                            size={14}
+                            color={selectedPkgs.length > 0 ? COLORS.accent : COLORS.textDim}
+                        />
+                        {selectedPkgs.length > 0 && (
+                            <View style={st.filterBadge}>
+                                <Text style={st.filterBadgeText}>{selectedPkgs.length}</Text>
+                            </View>
+                        )}
                     </Pressable>
                 </ScrollView>
                 {selecting && (
@@ -602,7 +623,7 @@ export default function NotificationScreen() {
     if (boot === 'loading') {
         return (
             <View style={st.screen}>
-                <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+                <StatusBar barStyle="dark-content" backgroundColor="#fff" />
                 <View style={st.center}>
                     <ActivityIndicator color={COLORS.accent} />
                     <Text style={st.centerText}>Loading local store…</Text>
@@ -614,7 +635,7 @@ export default function NotificationScreen() {
     if (boot === 'error') {
         return (
             <View style={st.screen}>
-                <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+                <StatusBar barStyle="dark-content" backgroundColor="#fff" />
                 <View style={st.center}>
                     <Text style={[st.centerText, { color: COLORS.danger }]}>{bootError}</Text>
                     <Btn label="Retry" kind="primary" onPress={() => { setBoot('loading'); setBootError(null); }} />
@@ -625,7 +646,7 @@ export default function NotificationScreen() {
 
     return (
         <View style={st.screen}>
-            <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+            <StatusBar barStyle="dark-content" backgroundColor="#fff" />
             <FlatList
                 data={visible}
                 keyExtractor={(it) => it.id}
@@ -660,27 +681,126 @@ export default function NotificationScreen() {
                 showsVerticalScrollIndicator={false}
             />
 
-            {/* app filter sheet */}
-            <Modal transparent visible={appSheet} animationType="slide" onRequestClose={() => setAppSheet(false)}>
-                <Pressable style={st.overlay} onPress={() => setAppSheet(false)}>
-                    <View style={st.sheet}>
-                        <Text style={st.modalTitle}>Filter by app</Text>
-                        <ScrollView style={st.sheetList}>
-                            <Pressable style={st.sheetRow} onPress={() => { setPkgFilter(null); setAppSheet(false); }}>
-                                <Text style={[st.sheetRowText, { color: !pkgFilter ? COLORS.accent : COLORS.text }]}>All apps</Text>
-                            </Pressable>
-                            {apps.map((a) => (
-                                <Pressable key={a.pkg} style={st.sheetRow} onPress={() => { setPkgFilter(a.pkg); setAppSheet(false); }}>
-                                    <Text style={[st.sheetRowText, { color: pkgFilter === a.pkg ? COLORS.accent : COLORS.text }]} numberOfLines={1}>
+            {/* app filter raw bottom sheet */}
+            <RBSheet
+                ref={appSheetRef}
+                height={550}
+                openDuration={250}
+                closeDuration={200}
+                draggable
+                closeOnPressMask
+                closeOnPressBack
+                customStyles={{
+                    wrapper: { backgroundColor: 'rgba(0,0,0,0.5)' },
+                    container: {
+                        backgroundColor: '#fff',
+                        borderTopLeftRadius: 24,
+                        borderTopRightRadius: 24,
+                    },
+                    draggableIcon: { backgroundColor: COLORS.border, width: 44, height: 4.5, borderRadius: 3 },
+                }}
+            >
+                <View style={st.sheetHeader}>
+                    <View style={st.sheetTitleRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Ionicons name="filter-outline" size={18} color={COLORS.accent} style={{ marginRight: 8 }} />
+                            <Text style={st.modalTitle}>Filter by app</Text>
+                            {selectedPkgs.length > 0 && (
+                                <View style={st.sheetHeaderPill}>
+                                    <Text style={st.sheetHeaderPillText}>{selectedPkgs.length} selected</Text>
+                                </View>
+                            )}
+                        </View>
+                        <TouchableOpacity
+                            onPress={() => setSelectedPkgs([])}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Text style={st.sheetResetText}>
+                                {selectedPkgs.length > 0 ? 'Clear all' : 'All apps'}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                    <Text style={st.sheetSubtitle}>Select one or multiple apps to filter notifications</Text>
+                </View>
+
+                <ScrollView style={st.sheetList} showsVerticalScrollIndicator={false}>
+                    {/* "All apps" option */}
+                    <TouchableOpacity
+                        style={[st.sheetRow, selectedPkgs.length === 0 && st.sheetRowActive]}
+                        onPress={() => setSelectedPkgs([])}
+                        activeOpacity={0.7}
+                    >
+                        <View style={[st.sheetRowIconBox, selectedPkgs.length === 0 && { backgroundColor: COLORS.accentDim }]}>
+                            <Ionicons name="apps" size={18} color={selectedPkgs.length === 0 ? COLORS.accent : COLORS.textDim} />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                            <Text style={[st.sheetRowText, selectedPkgs.length === 0 && { fontWeight: '700' }]}>
+                                All apps
+                            </Text>
+                            <Text style={st.sheetRowSub}>Show notifications from all apps</Text>
+                        </View>
+                        <View style={[st.checkbox, selectedPkgs.length === 0 && st.checkboxActive]}>
+                            {selectedPkgs.length === 0 && <Ionicons name="checkmark" size={14} color="#fff" />}
+                        </View>
+                    </TouchableOpacity>
+
+                    {/* App options */}
+                    {apps.map((a) => {
+                        const isChecked = selectedPkgs.includes(a.pkg);
+                        const toggleApp = () => {
+                            setSelectedPkgs((prev) => {
+                                if (prev.includes(a.pkg)) {
+                                    return prev.filter((p) => p !== a.pkg);
+                                } else {
+                                    return [...prev, a.pkg];
+                                }
+                            });
+                        };
+                        return (
+                            <TouchableOpacity
+                                key={a.pkg}
+                                style={[st.sheetRow, isChecked && st.sheetRowActive]}
+                                onPress={toggleApp}
+                                activeOpacity={0.7}
+                            >
+                                {a.icon ? (
+                                    <Image source={{ uri: a.icon }} style={st.sheetAppIcon} resizeMode="cover" />
+                                ) : (
+                                    <View style={[st.sheetRowIconBox, { backgroundColor: COLORS.surfaceHigh }]}>
+                                        <Text style={{ color: avatarFg(a.pkg), fontWeight: '700', fontSize: 13 }}>
+                                            {(a.label || '?').charAt(0).toUpperCase()}
+                                        </Text>
+                                    </View>
+                                )}
+                                <View style={{ flex: 1, marginLeft: 12 }}>
+                                    <Text style={[st.sheetRowText, isChecked && { fontWeight: '700' }]} numberOfLines={1}>
                                         {a.label}
                                     </Text>
+                                    <Text style={st.sheetRowSub} numberOfLines={1}>{a.pkg}</Text>
+                                </View>
+                                <View style={st.sheetCountBadge}>
                                     <Text style={st.sheetCount}>{a.count}</Text>
-                                </Pressable>
-                            ))}
-                        </ScrollView>
-                    </View>
-                </Pressable>
-            </Modal>
+                                </View>
+                                <View style={[st.checkbox, isChecked && st.checkboxActive]}>
+                                    {isChecked && <Ionicons name="checkmark" size={14} color="#fff" />}
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+
+                <View style={st.sheetFooter}>
+                    <TouchableOpacity
+                        style={st.sheetDoneBtn}
+                        onPress={() => appSheetRef.current?.close()}
+                        activeOpacity={0.8}
+                    >
+                        <Text style={st.sheetDoneBtnText}>
+                            {selectedPkgs.length === 0 ? 'Done (All apps)' : `Apply Filter (${selectedPkgs.length})`}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+            </RBSheet>
 
             {/* language-id bootstrap popup */}
             <Modal transparent visible={!!liModal} animationType="fade" onRequestClose={() => setLiModal(null)}>
@@ -737,13 +857,13 @@ const computeStatsSafe = (items) => F.computeStats(items);
 
 
 const st = StyleSheet.create({
-    screen: { flex: 1, backgroundColor: COLORS.bg, paddingTop: STATUS_PAD },
+    screen: { flex: 1, backgroundColor: COLORS.bg },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
     centerText: { color: COLORS.textDim, marginTop: 12 },
-    listContent: { padding: 16, paddingBottom: 96 },
+    listContent: { padding: 16, paddingTop: 18, paddingBottom: 96 },
     header: { marginBottom: 12 },
-    h1: { color: COLORS.text, fontSize: 26, fontWeight: '800' },
-    h2: { color: COLORS.textDim, fontSize: 14, marginTop: 4 },
+    h1: { color: '#000', fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
+    h2: { color: COLORS.textDim, fontSize: 14 },
     banner: { borderRadius: 12, padding: 10, marginBottom: 10 },
     bannerText: { fontSize: 12 },
     statusCard: { backgroundColor: COLORS.surface, borderColor: COLORS.border, borderWidth: 1, borderRadius: 18, padding: 16, marginBottom: 10 },
@@ -753,7 +873,7 @@ const st = StyleSheet.create({
     dot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
     monText: { fontSize: 13, fontWeight: '600' },
     statusTitle: { color: COLORS.text, fontSize: 26, fontWeight: '800' },
-    statusSub: { color: COLORS.textDim, fontSize: 13, marginTop: 6 },
+    statusSub: { color: COLORS.textDim, fontSize: 13, marginTop: 5 },
     statRow: { flexDirection: 'row', alignItems: 'center', marginTop: 14, borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 12 },
     statCell: { flex: 1, alignItems: 'center' },
     statNum: { color: COLORS.text, fontSize: 20, fontWeight: '800' },
@@ -826,11 +946,29 @@ const st = StyleSheet.create({
     blockedList: { maxHeight: 160, marginVertical: 10 },
     blockedRow: { backgroundColor: COLORS.surfaceHigh, borderRadius: 10, padding: 8, marginBottom: 6 },
     blockedText: { color: COLORS.text, fontSize: 12 },
-    sheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, maxHeight: '70%', marginTop: 'auto' },
-    sheetList: { marginTop: 8 },
-    sheetRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-    sheetRowText: { fontSize: 14, fontWeight: '600', flex: 1 },
-    sheetCount: { color: COLORS.textDim, fontSize: 13 },
+    filterIconChip: { paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+    filterBadge: { marginLeft: 5, backgroundColor: COLORS.accent, borderRadius: 999, width: 17, height: 17, alignItems: 'center', justifyContent: 'center' },
+    filterBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+    sheetHeader: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+    sheetTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    sheetSubtitle: { color: COLORS.textDim, fontSize: 12, marginTop: 4 },
+    sheetHeaderPill: { backgroundColor: COLORS.accentDim, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, marginLeft: 8 },
+    sheetHeaderPillText: { color: COLORS.accent, fontSize: 11, fontWeight: '700' },
+    sheetResetText: { color: COLORS.accent, fontSize: 13, fontWeight: '700' },
+    sheetList: { flex: 1, paddingHorizontal: 16, paddingTop: 10 },
+    sheetRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 10, borderRadius: 12, marginBottom: 4 },
+    sheetRowActive: { backgroundColor: COLORS.accentDim },
+    sheetRowIconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: COLORS.surfaceHigh, alignItems: 'center', justifyContent: 'center' },
+    sheetAppIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: COLORS.surfaceHigh },
+    sheetRowText: { fontSize: 14, fontWeight: '600', color: COLORS.text },
+    sheetRowSub: { fontSize: 11.5, color: COLORS.textDim, marginTop: 1 },
+    sheetCountBadge: { backgroundColor: COLORS.surfaceHigh, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginRight: 10 },
+    sheetCount: { fontSize: 11.5, fontWeight: '700', color: COLORS.textDim },
+    checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 1.8, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
+    checkboxActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
+    sheetFooter: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: Platform.OS === 'android' ? 68 : 36, borderTopWidth: 1, borderTopColor: COLORS.border, backgroundColor: '#fff' },
+    sheetDoneBtn: { backgroundColor: '#000', borderRadius: 12, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+    sheetDoneBtnText: { color: '#fff', fontSize: 14.5, fontWeight: '700' },
     btn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: COLORS.surfaceHigh, marginRight: 8, marginTop: 8, alignItems: 'center' },
     btnText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
     snack: { position: 'absolute', bottom: 24, alignSelf: 'center', backgroundColor: COLORS.surfaceHigh, borderColor: COLORS.border, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, maxWidth: '86%' },

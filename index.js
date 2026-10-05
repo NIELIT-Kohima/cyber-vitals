@@ -1,7 +1,7 @@
 import { registerRootComponent } from 'expo';
 
 import { AppRegistry } from 'react-native';
-import { HEADLESS_TASK_NAME, createNotificationHeadlessHandler } from './screens/notificationsScreen/notificationFunc';
+import { HEADLESS_TASK_NAME, createNotificationHeadlessHandler } from './screens/notificationsScreen/details-function';
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

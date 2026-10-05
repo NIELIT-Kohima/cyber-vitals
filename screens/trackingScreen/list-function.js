@@ -7,11 +7,15 @@ export const Native = NativeModules.UsageStatsModule;
 const DAY = 864e5;
 export const RANGES = [
   { key: 'today', label: 'Today', days: 1 },
-  { key: '7d', label: '7 Days', days: 7 },
+  { key: '24h', label: 'Last 24 Hours', days: 1 },
+  { key: '7d', label: 'Last 7 Days', days: 7 },
 ];
 const daysFor = (key) => RANGES.find((r) => r.key === key)?.days ?? 1;
 
 export const rangeBounds = (key) => {
+  if (key === '24h') {
+    return { start: Date.now() - DAY, end: Date.now() };
+  }
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   return { start: start.getTime() - (daysFor(key) - 1) * DAY, end: Date.now() };

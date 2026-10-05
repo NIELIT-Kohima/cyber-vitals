@@ -1,7 +1,7 @@
 import { NativeModules } from 'react-native';
 import { useCallback, useMemo } from 'react';
 import { FLAGS, LIMITS, RISK_FLAGS, STORES } from '../../constants';
-import { assessAppRisk, metaFor } from './listFunc';
+import { assessAppRisk, metaFor } from './list-function';
 
 const DAY_MS = 86400000;
 

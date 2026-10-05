@@ -1,4 +1,4 @@
-package com.anonymous.icsas2
+package cyber.vitals.nielit
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

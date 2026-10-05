@@ -59,10 +59,10 @@ export default function ListFunc(navigation) {
 
     useEffect(() => { reload(); }, [reload]);
 
-    const list = useMemo(() => {
+    const { highlighted, other, list } = useMemo(() => {
         const q = query.trim().toLowerCase();
 
-        return apps
+        const base = apps
             .filter((a) =>
                 tab === 'risky'
                     ? a.risky
@@ -75,16 +75,43 @@ export default function ListFunc(navigation) {
                     !q ||
                     a.label.toLowerCase().includes(q) ||
                     a.packageName.includes(q)
-            )
-            .sort((a, b) => a.label.localeCompare(b.label));
+            );
+
+        const highlightedList = [];
+        const otherList = [];
+
+        base.forEach((app) => {
+            if (app.flags.includes('debuggable') || app.flags.includes('unknownOrigin')) {
+                highlightedList.push(app);
+            } else {
+                otherList.push(app);
+            }
+        });
+
+        highlightedList.sort((a, b) => {
+            const aDbg = a.flags.includes('debuggable') ? 0 : 1;
+            const bDbg = b.flags.includes('debuggable') ? 0 : 1;
+            if (aDbg !== bDbg) return aDbg - bDbg;
+            return a.label.localeCompare(b.label);
+        });
+
+        otherList.sort((a, b) => a.label.localeCompare(b.label));
+
+        return {
+            highlighted: highlightedList,
+            other: otherList,
+            list: [...highlightedList, ...otherList],
+        };
     }, [apps, tab, query]);
 
     return {
         list,
+        highlighted,
+        other,
         total: apps.length,
         riskyCount: useMemo(() => apps.filter((a) => a.risky).length, [apps]),
         loading, error, reload, tab, setTab, query, setQuery,
         scannedLabel: scannedAt ? `Last scanned ${timeAgo(scannedAt)}` : 'Not scanned yet',
-        open: (app) => navigation.navigate('SourceDetailsFront', { app }),
+        open: (app) => navigation.navigate('SourceDetails', { app }),
     };
 }

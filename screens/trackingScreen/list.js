@@ -4,9 +4,9 @@ import {
     ActivityIndicator, Platform, RefreshControl, StatusBar
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { COLORS, FLAGS } from '../../constants';
+import { COLORS } from '../../constants';
 
-import { TrackingListFunc, RANGES, fmtDuration, fmtTime, worstFlag, worstTone } from './listFunc';
+import { TrackingListFunc, RANGES, fmtDuration, fmtTime } from './list-function';
 export const alpha = (hex, a) => `${hex}${a}`;
 export const STATUS_PAD = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
 export const ScreenShell = ({ children }) => <SafeAreaView style={[S.root, { paddingTop: STATUS_PAD }]}>{children}</SafeAreaView>;
@@ -120,10 +120,11 @@ export const StateView = ({ status, error, onRetry, empty, emptyText, children }
 };
 
 export const Segmented = ({ value, onChange }) => (
-    <View style={S.seg}>
+    <View style={S.tabsRow}>
         {RANGES.map((r) => (
-            <TouchableOpacity key={r.key} activeOpacity={0.8} style={[S.segBtn, value === r.key && S.segBtnOn]} onPress={() => onChange(r.key)}>
-                <Text style={[S.segText, value === r.key && S.segTextOn]}>{r.label}</Text>
+            <TouchableOpacity key={r.key} activeOpacity={0.8} style={S.tabBtn} onPress={() => onChange(r.key)}>
+                <Text style={[S.tabLabel, value === r.key && S.tabLabelOn]}>{r.label}</Text>
+                {value === r.key && <View style={S.tabIndicator} />}
             </TouchableOpacity>
         ))}
     </View>
@@ -141,18 +142,16 @@ const PermissionCard = ({ onEnable }) => (
     </Card>
 );
 
-const TrackingListFront = ({ navigation }) => {
+const TrackingList = ({ navigation }) => {
     const { status, refreshing, error, apps, total, range, sort, simulated, permission, setRange, setSort, refresh, enableAccess } = TrackingListFunc();
 
     const STATUS_PAD = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
     return (
 
-        <SafeAreaView style={[S.root, { paddingTop: STATUS_PAD }]}>
+        <View style={S.root}>
             <View style={S.header} >
-                <Text
-                    style={S.title}
-                >
-                    Session Logs
+                <Text style={S.title}>
+                    Session <Text style={{ color: COLORS.accent }}>Logs</Text>
                 </Text>
 
                 <Text
@@ -175,11 +174,20 @@ const TrackingListFront = ({ navigation }) => {
                             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={COLORS.accent} progressBackgroundColor={COLORS.surface} />}
                             ListHeaderComponent={(
                                 <View>
-                                    <Card style={S.totalCard}>
-                                        <Glyph name="clock" size={22} color={COLORS.accent} />
-                                        <Text style={S.totalText}>{fmtDuration(total)}</Text>
+                                    <View style={S.usageCard}>
+                                        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                                            <View style={[S.usageRing, { width: 110, height: 110, borderRadius: 55, top: -40, right: -30, backgroundColor: 'rgba(255,255,255,0.12)' }]} />
+                                            <View style={[S.usageRing, { width: 70, height: 70, borderRadius: 35, bottom: -25, left: -20, backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+                                        </View>
+                                        <View style={S.usageIconWrap}>
+                                            <Glyph name="clock" size={22} color="#fff" />
+                                        </View>
+                                        <View style={S.usageTextWrap}>
+                                            <Text style={S.usageLabel}>Total Screen Time</Text>
+                                            <Text style={S.usageValue}>{fmtDuration(total)}</Text>
+                                        </View>
                                         {simulated && <Chip tone="warn" style={S.simChip}>Simulated</Chip>}
-                                    </Card>
+                                    </View>
                                     <View style={S.sortRow}>
                                         <Text style={S.count}>Installed Apps ({apps.length})</Text>
                                         <View style={S.sortBtns}>
@@ -201,56 +209,59 @@ const TrackingListFront = ({ navigation }) => {
                                     </View>
                                 </View>
                             )}
-                            renderItem={({ item }) => {
-                                const wf = worstFlag(item.flags);
-                                const risky = wf && FLAGS[wf].tone !== 'accent';
-                                return (
-                                    <TouchableOpacity
-                                        activeOpacity={0.7}
-                                        style={S.row}
-                                        onPress={() => navigation?.navigate('TrackingDetailsFront', { pkg: item.pkg, label: item.label, icon: item.icon, range })}
-                                    >
-                                        <IconTile icon={item.icon} label={item.label} />
-                                        <View style={S.rowMain}>
-                                            <View style={S.rowLine}>
-                                                <Text style={S.rowName} numberOfLines={1}>{item.label}</Text>
-                                                {risky && <Chip tone={worstTone(item.flags)} style={S.rowChip}>{FLAGS[wf].tick}</Chip>}
-                                            </View>
-                                            <Text style={S.rowSub}>{fmtDuration(item.totalMs)} ({item.pct}%)</Text>
-                                            <Bar pct={item.pct} />
+                            renderItem={({ item }) => (
+                                <TouchableOpacity
+                                    activeOpacity={0.7}
+                                    style={S.row}
+                                    onPress={() => navigation?.navigate('TrackingDetails', { pkg: item.pkg, label: item.label, icon: item.icon, range })}
+                                >
+                                    <IconTile icon={item.icon} label={item.label} />
+                                    <View style={S.rowMain}>
+                                        <View style={S.rowLine}>
+                                            <Text style={S.rowName} numberOfLines={1}>{item.label}</Text>
                                         </View>
-                                        <View style={S.rowSide}>
-                                            <Text style={S.sideLabel}>Last used</Text>
-                                            <Text style={S.sideValue}>{fmtTime(item.lastUsed)}</Text>
-                                        </View>
-                                        <Glyph name="chevron" size={14} color={COLORS.textDim} />
-                                    </TouchableOpacity>
-                                );
-                            }}
+                                        <Text style={S.rowSub}>{fmtDuration(item.totalMs)} ({item.pct}%)</Text>
+                                        <Bar pct={item.pct} />
+                                    </View>
+                                    <View style={S.rowSide}>
+                                        <Text style={S.sideLabel}>Last used</Text>
+                                        <Text style={S.sideValue}>{fmtTime(item.lastUsed)}</Text>
+                                    </View>
+                                    <Glyph name="chevron" size={14} color={COLORS.textDim} />
+                                </TouchableOpacity>
+                            )}
                         />
                     </StateView>
                 )}
             </View>
-        </SafeAreaView>
+        </View>
     );
 };
 
 const S = StyleSheet.create({
 
     root: { flex: 1, backgroundColor: COLORS.bg },
-    header: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12 },
+    header: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10 },
     headerText: { flex: 1 },
-    title: { color: COLORS.text, fontSize: 26, fontWeight: '700' },
+    title: { color: '#000', fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
     subtitle: { color: COLORS.textDim, fontSize: 13, marginTop: 4 },
     body: { flex: 1, paddingHorizontal: 16 },
-    seg: { flexDirection: 'row', backgroundColor: COLORS.surface, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: COLORS.border },
-    segBtn: { flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: 'center' },
-    segBtnOn: { backgroundColor: COLORS.accent },
-    segText: { color: COLORS.textDim, fontSize: 13, fontWeight: '600' },
-    segTextOn: { color: COLORS.onAccent },
-    listContent: { paddingBottom: 24 },
-    totalCard: { flexDirection: 'row', alignItems: 'center', marginTop: 14, padding: 18 },
-    totalText: { color: COLORS.text, fontSize: 24, fontWeight: '700', marginLeft: 14 },
+    tabsRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 4 },
+    tabBtn: { flex: 1, alignItems: 'center', paddingBottom: 10 },
+    tabLabel: { color: COLORS.textDim, fontSize: 13, fontWeight: '600' },
+    tabLabelOn: { color: COLORS.text, fontWeight: '700' },
+    tabIndicator: { position: 'absolute', bottom: 0, height: 3, width: '60%', borderRadius: 2, backgroundColor: COLORS.accent },
+    listContent: { paddingBottom: 110 },
+    usageCard: {
+        flexDirection: 'row', alignItems: 'center', marginTop: 14, padding: 18,
+        backgroundColor: COLORS.accent, borderRadius: 18, overflow: 'hidden',
+        shadowColor: COLORS.accent, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+    },
+    usageRing: { position: 'absolute' },
+    usageIconWrap: { width: 46, height: 46, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+    usageTextWrap: { flex: 1, marginLeft: 14 },
+    usageLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '600', marginBottom: 2 },
+    usageValue: { color: '#fff', fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
     simChip: { marginLeft: 'auto' },
     count: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
     sortRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 12 },
@@ -263,7 +274,6 @@ const S = StyleSheet.create({
     rowMain: { flex: 1, marginLeft: 12, marginRight: 10 },
     rowLine: { flexDirection: 'row', alignItems: 'center' },
     rowName: { color: COLORS.text, fontSize: 15, fontWeight: '600', flexShrink: 1 },
-    rowChip: { marginLeft: 8, paddingHorizontal: 7 },
     rowSub: { color: COLORS.textDim, fontSize: 12, marginVertical: 4 },
     barTrack: { height: 4, borderRadius: 2, backgroundColor: COLORS.surfaceHigh },
     barFill: { height: 4, borderRadius: 2 },
@@ -287,4 +297,4 @@ const S = StyleSheet.create({
     permText: { color: COLORS.textDim, fontSize: 13, lineHeight: 19, marginTop: 8, textAlign: 'center' },
 });
 
-export default TrackingListFront;
+export default TrackingList;

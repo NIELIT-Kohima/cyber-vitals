@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
     View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Modal, Switch,
-    Image, ScrollView, Animated, Platform, StatusBar,
+    Image, ScrollView, Animated, Platform, StatusBar, ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, PROTO_COLORS, PROTO_LABELS } from '../../constants';
-import { store, startTap, stopTap, RANGES, fmtClock, fmtDur, fmtBytes } from './networkFunc';
+import { store, startTap, stopTap, RANGES, fmtClock, fmtDur, fmtBytes } from './details-function';
 
 const useStore = () => useSyncExternalStore(store.subscribe, () => store.version);
 
@@ -72,22 +73,18 @@ const Sheet = ({ visible, title, onClose, children }) => (
     </Modal>
 );
 const SortMenu = ({ value, options, onChange }) => {
-    const [open, setOpen] = useState(false);
-    const label = options.find((o) => o.key === value)?.label;
+    const currentIndex = options.findIndex((o) => o.key === value);
+    const currentOption = options[currentIndex >= 0 ? currentIndex : 0];
+    const toggle = () => {
+        const nextIndex = ((currentIndex >= 0 ? currentIndex : 0) + 1) % options.length;
+        onChange(options[nextIndex].key);
+    };
     return (
-        <>
-            <TouchableOpacity style={st.rowC} onPress={() => setOpen(true)}>
-                <Text style={st.sortTx}>Sort by: </Text><Text style={st.sortTxOn}>{label} ⌄</Text>
-            </TouchableOpacity>
-            <Sheet visible={open} title="Sort by" onClose={() => setOpen(false)}>
-                {options.map((o) => (
-                    <TouchableOpacity key={o.key} style={st.optRow} onPress={() => { onChange(o.key); setOpen(false); }}>
-                        <Text style={[st.optTx, o.key === value && { color: COLORS.accent }]}>{o.label}</Text>
-                        {o.key === value && <Text style={{ color: COLORS.accent }}>✓</Text>}
-                    </TouchableOpacity>
-                ))}
-            </Sheet>
-        </>
+        <TouchableOpacity style={st.rowC} onPress={toggle} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="swap-vertical" size={13} color={COLORS.accent} />
+            <Text style={st.sortTx}>Sort: </Text>
+            <Text style={st.sortTxOn}>{currentOption?.label}</Text>
+        </TouchableOpacity>
     );
 };
 const Legend = () => (
@@ -130,43 +127,61 @@ function StatusCard() {
     useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
     const s = store.getStats();
     const cfg = {
-        active: { c: COLORS.accent, t: 'Local tap active', d: 'Capturing network traffic using Android VpnService. This uses the device’s VPN slot and cannot run alongside another VPN.' },
+        active: { c: COLORS.accent, t: 'Local tap active', d: 'Capturing network traffic using Android VpnService.' },
         starting: { c: COLORS.warn, t: 'Starting tap…', d: 'Requesting the local VPN tunnel from the system.' },
         permission: { c: COLORS.warn, t: 'VPN permission requested', d: 'Approve the system dialog to allow the local tap.' },
         boot: { c: COLORS.warn, t: 'Loading device apps…', d: 'Indexing installed applications by UID.' },
         idle: { c: COLORS.textDim, t: 'Tap stopped', d: 'Start the local tap to capture per-app connections.' },
         error: { c: COLORS.danger, t: 'Tap error', d: s.error || 'The local VPN tunnel failed to start.' },
-        unsupported: { c: COLORS.danger, t: 'Unavailable on this platform', d: 'The native VpnService tap requires Android with the native module linked.' },
+        unsupported: { c: COLORS.danger, t: 'Unavailable on this platform', d: 'The native VpnService tap requires Android.' },
     }[s.status] || { c: COLORS.textDim, t: s.status, d: '' };
 
     return (
-        <View style={st.card}>
-            <View style={st.row}>
-                <View style={[st.shield, { backgroundColor: s.status === 'active' ? COLORS.accentDim : COLORS.surfaceHigh }]}>
-                    <Text style={{ color: cfg.c, fontSize: 16 }}>
-                        {s.status === 'active' ? '✓' : (s.status === 'error' || s.status === 'unsupported') ? '!' : '…'}
-                    </Text>
-                </View>
-                <View style={st.flex}>
-                    <View style={st.rowC}>
-                        <Text style={[st.cardTitle, { color: cfg.c }]}>{cfg.t}</Text>
-                        <Text style={st.info}> ⓘ</Text>
-                        {s.status === 'active' && <Chip color={COLORS.accent}>up {fmtDur(Date.now() - s.startedAt)}</Chip>}
-                    </View>
-                    <Text style={st.cardBody}>{cfg.d}</Text>
-                </View>
-            </View>
-            <View style={st.row}>
-                {(s.status === 'idle' || s.status === 'error') && (
-                    <TouchableOpacity style={st.btnAccent} onPress={startTap}><Text style={st.btnAccentTx}>Start tap</Text></TouchableOpacity>
+        <View style={[st.banner, s.status === 'error' && { backgroundColor: COLORS.dangerDim }]}>
+            <View style={st.bannerIcon}>
+                {s.status === 'active' ? (
+                    <Ionicons name="shield-checkmark" size={20} color={COLORS.accent} />
+                ) : (s.status === 'starting' || s.status === 'boot') ? (
+                    <ActivityIndicator size="small" color={COLORS.accent} />
+                ) : (s.status === 'error' || s.status === 'unsupported') ? (
+                    <Ionicons name="alert-circle-outline" size={20} color={COLORS.danger} />
+                ) : (
+                    <Ionicons name="shield-outline" size={20} color={COLORS.accent} />
                 )}
-                {s.status === 'active' && (
-                    <TouchableOpacity style={st.btnGhost} onPress={stopTap}>
-                        <Text style={[st.btnGhostTx, { color: COLORS.danger }]}>Stop</Text>
-                    </TouchableOpacity>
-                )}
-                {s.status === 'error' && <Text style={st.retryHint}>retrying is safe — nothing leaves the device</Text>}
             </View>
+            <View style={st.bannerText}>
+                <Text style={st.bannerTitle}>{cfg.t}</Text>
+                <Text style={st.bannerDesc} numberOfLines={2}>
+                    {s.status === 'active' ? `Live capturing · up ${fmtDur(Date.now() - s.startedAt)}` : cfg.d}
+                </Text>
+            </View>
+            {(s.status === 'idle' || s.status === 'error' || s.status === 'unsupported') && (
+                <TouchableOpacity
+                    style={st.scanButton}
+                    onPress={startTap}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Start tap"
+                >
+                    <Text style={st.scanButtonText}>Start tap</Text>
+                </TouchableOpacity>
+            )}
+            {s.status === 'active' && (
+                <TouchableOpacity
+                    style={[st.scanButton, { backgroundColor: '#000' }]}
+                    onPress={stopTap}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Stop tap"
+                >
+                    <Text style={st.scanButtonText}>Stop tap</Text>
+                </TouchableOpacity>
+            )}
+            {(s.status === 'starting' || s.status === 'permission' || s.status === 'boot') && (
+                <View style={[st.scanButton, { backgroundColor: COLORS.surfaceHigh }]}>
+                    <Text style={[st.scanButtonText, { color: COLORS.textDim }]}>Waiting…</Text>
+                </View>
+            )}
         </View>
     );
 }
@@ -205,7 +220,9 @@ function ListScreen({ nav }) {
 
     return (
         <View style={st.screen}>
-            <Text style={st.h1}>Network Monitor</Text>
+            <Text style={st.h1}>
+                Network <Text style={{ color: COLORS.accent }}>Security</Text>
+            </Text>
             <Text style={st.sub}>See which apps connect to the internet in real time.</Text>
             <StatusCard />
             <View style={st.statsRow}>
@@ -225,9 +242,6 @@ function ListScreen({ nav }) {
                 <Text style={st.chev}>›</Text>
             </TouchableOpacity>
 
-            <View style={st.rowC}>
-                <Chip color={COLORS.accent} filled>Apps</Chip>
-            </View>
             <View style={st.search}>
                 <Text style={st.searchIcon}>⌕</Text>
                 <TextInput style={st.searchInput} placeholder="Search apps or domains…" placeholderTextColor={COLORS.textDim}
@@ -485,7 +499,7 @@ function TimelineScreen({ nav }) {
     );
 }
 
-export default function networkFront() {
+export default function NetworkDetails() {
     const [route, setRoute] = useState({ name: 'list' });
     const nav = useMemo(() => ({
         openDetail: (uid) => setRoute({ name: 'detail', uid }),
@@ -494,7 +508,7 @@ export default function networkFront() {
     }), []);
     return (
         <View style={st.root}>
-            <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+            <StatusBar barStyle="dark-content" backgroundColor="#fff" />
             {route.name === 'list' && <ListScreen nav={nav} />}
             {route.name === 'detail' && <DetailScreen uid={route.uid} nav={nav} />}
             {route.name === 'timeline' && <TimelineScreen nav={nav} />}
@@ -504,16 +518,23 @@ export default function networkFront() {
 
 const st = StyleSheet.create({
     root: { flex: 1, backgroundColor: COLORS.bg },
-    screen: { flex: 1, backgroundColor: COLORS.bg, paddingHorizontal: 16, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 8 : 48 },
+    screen: { flex: 1, backgroundColor: COLORS.bg, paddingHorizontal: 16, paddingTop: 18 },
     flex: { flex: 1 }, flexRow: { flex: 1, flexDirection: 'row' },
     row: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
     rowC: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    h1: { color: COLORS.text, fontSize: 26, fontWeight: '700' },
+    h1: { color: '#000', fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
     h2: { color: COLORS.text, fontSize: 20, fontWeight: '700' },
     sub: { color: COLORS.textDim, fontSize: 13, marginTop: 4, marginBottom: 12 },
     info: { color: COLORS.textDim, fontSize: 13 },
     chev: { color: COLORS.textDim, fontSize: 20, marginLeft: 8 },
     backTx: { color: COLORS.text, fontSize: 18 },
+    banner: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.accentDim, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, padding: 12, marginTop: 8 },
+    bannerIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+    bannerText: { flex: 1, marginLeft: 10, marginRight: 8 },
+    bannerTitle: { color: COLORS.text, fontSize: 14.5, fontWeight: '700' },
+    bannerDesc: { color: COLORS.textDim, fontSize: 12, marginTop: 2 },
+    scanButton: { backgroundColor: COLORS.accent, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 11 },
+    scanButtonText: { color: COLORS.onAccent, fontSize: 12.5, fontWeight: '800' },
     card: { backgroundColor: COLORS.surface, borderColor: COLORS.border, borderWidth: 1, borderRadius: 14, padding: 14, marginTop: 12 },
     cardTitle: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
     cardBody: { color: COLORS.textDim, fontSize: 12, marginTop: 4, lineHeight: 18 },

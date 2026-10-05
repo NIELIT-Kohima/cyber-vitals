@@ -744,7 +744,11 @@ export function filterItems(items, windowKey, pkg) {
     const cutoff = ms ? now() - ms : null;
     return (items || [])
         .filter((it) => (cutoff ? it.postedAt >= cutoff : true))
-        .filter((it) => (pkg ? it.pkg === pkg : true))
+        .filter((it) => {
+            if (!pkg) return true;
+            if (Array.isArray(pkg)) return pkg.length === 0 || pkg.includes(it.pkg);
+            return it.pkg === pkg;
+        })
         .sort((a, b) => b.postedAt - a.postedAt);
 }
 
@@ -753,8 +757,9 @@ export const autoPickIds = (items, n = MAX_BATCH) => (items || []).slice(0, n).m
 export function appOptions(items) {
     const map = new Map();
     (items || []).forEach((it) => {
-        const e = map.get(it.pkg) || { pkg: it.pkg, label: it.appLabel, count: 0 };
+        const e = map.get(it.pkg) || { pkg: it.pkg, label: it.appLabel, icon: it.icon, count: 0 };
         e.count += 1;
+        if (!e.icon && it.icon) e.icon = it.icon;
         map.set(it.pkg, e);
     });
     return Array.from(map.values()).sort((a, b) => b.count - a.count);

@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "icsas2",
-    "slug": "icsas2",
+    "name": "CyberVitals",
+    "slug": "cyber-vitals",
+    "scheme": "cyber-vitals",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,13 +11,8 @@
       "supportsTablet": true
     },
     "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
-      "package": "com.anonymous.icsas2"
+      "package": "cyber.vitals.nielit",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"

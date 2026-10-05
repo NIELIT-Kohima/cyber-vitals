@@ -1,4 +1,4 @@
-package com.anonymous.icsas2
+package cyber.vitals.nielit
 
 import android.content.Intent
 import android.content.pm.ApplicationInfo

@@ -1,11 +1,21 @@
 import React, { useState } from 'react';
 import {
-    ActivityIndicator, FlatList, Image, Modal, Pressable, SafeAreaView, ScrollView,
+    ActivityIndicator, BackHandler, FlatList, Image, Modal, Pressable, SafeAreaView, ScrollView,
     StatusBar, Platform, StyleSheet, Text, TextInput, View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants';
-import { AccessListFunc, useAiScan, summarizePermissions } from './listFunc';
-import AccessDetailsFront from './detailsFront';
+import { AccessListFunc, useAiScan, summarizePermissions, computeOverview, appsWithGroup } from './list-function';
+import AccessDetails from './details';
+
+const OVERVIEW_TONES = {
+    location: { fg: '#2563EB', bg: '#E8F0FE' },
+    contacts: { fg: '#7C3AED', bg: '#F1EAFE' },
+    audio: { fg: '#EA580C', bg: '#FFEDE0' },
+    sms: { fg: '#0891B2', bg: '#E0F6FA' },
+    camera: { fg: '#DB2777', bg: '#FDE8F1' },
+    storage: { fg: '#31bba1', bg: '#E6F7F4' },
+};
 
 export function Icon({ name, size = 20, color = COLORS.textDim, strokeWidth = 1.6 }) {
     const s = strokeWidth;
@@ -68,7 +78,7 @@ const toneFor = (id) => {
     return TILE_TONES[hash % TILE_TONES.length];
 };
 
-export function AppTile({ app, size = 46 }) {
+export function AppTile({ app, size = 55 }) {
     if (app?.icon) {
         return (
             <Image
@@ -92,7 +102,7 @@ const AiBanner = ({ scanning, onScan }) => (
         <View style={styles.bannerIcon}><Icon name="sparkle" size={20} color={COLORS.accent} /></View>
         <View style={styles.bannerText}>
             <Text style={styles.bannerTitle}>Let AI check your apps</Text>
-            <Text style={styles.bannerDesc}>We'll scan your installed apps and flag any that have unusual or risky permissions.</Text>
+            <Text style={styles.bannerDesc}>Scan your installed apps and flag any that have risky permissions.</Text>
         </View>
         <Pressable
             onPress={onScan}
@@ -107,7 +117,7 @@ const AiBanner = ({ scanning, onScan }) => (
                     <Text style={styles.scanButtonText}>Scanning…</Text>
                 </View>
             ) : (
-                <Text style={styles.scanButtonText}>Scan with AI</Text>
+                <Text style={styles.scanButtonText}>Start Scan</Text>
             )}
         </Pressable>
     </View>
@@ -217,20 +227,30 @@ const ScanModal = ({ scan, totalCount }) => {
     );
 };
 
-export default function AccessListFront() {
+export default function AccessList() {
     const list = AccessListFunc();
     const scan = useAiScan(list.apps);
-    const STATUS_PAD = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
+    const [tab, setTab] = useState('overview');
+    const [group, setGroup] = useState(null);
+    const total = list.apps?.length ?? 0;
+    const overview = React.useMemo(() => computeOverview(list.apps), [list.apps]);
+    const groupMeta = overview.find((g) => g.key === group) || null;
+    const groupApps = React.useMemo(() => (group ? appsWithGroup(list.apps, group) : []), [list.apps, group]);
+    React.useEffect(() => {
+        if (!group) return undefined;
+        const sub = BackHandler.addEventListener('hardwareBackPress', () => { setGroup(null); return true; });
+        return () => sub.remove();
+    }, [group]);
     if (list.selected) {
-        return <AccessDetailsFront app={list.selected} onBack={list.closeApp} />;
+        return <AccessDetails app={list.selected} onBack={list.closeApp} />;
     }
 
     return (
-        <SafeAreaView style={[styles.root, { paddingTop: STATUS_PAD }]}>
-            <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+        <View style={styles.root}>
+            <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>
-                    Access<Text style={styles.headerAccent}>Control</Text>
+                    Access <Text style={styles.headerAccent}>Control</Text>
                 </Text>
             </View>
 
@@ -238,13 +258,17 @@ export default function AccessListFront() {
                 <AiBanner scanning={scan.phase === 'scanning'} onScan={scan.scan} />
 
                 <View style={styles.tabBar}>
-                    <View style={styles.tab}>
-                        <Text style={styles.tabText}>All apps ({list.apps?.length ?? 0})</Text>
-                        <View style={styles.tabUnderline} />
-                    </View>
+                    <Pressable style={[styles.tab, tab === 'overview' && styles.tabActive]} onPress={() => { setTab('overview'); setGroup(null); }} accessibilityRole="tab">
+                        <Text style={styles.tabText}>Overview</Text>
+                        {tab === 'overview' && <View style={styles.tabUnderline} />}
+                    </Pressable>
+                    <Pressable style={[styles.tab, tab === 'all' && styles.tabActive]} onPress={() => { setTab('all'); setGroup(null); }} accessibilityRole="tab">
+                        <Text style={styles.tabText}>All Apps ({list.apps?.length ?? 0})</Text>
+                        {tab === 'all' && <View style={styles.tabUnderline} />}
+                    </Pressable>
                 </View>
 
-                <View style={styles.searchBar}>
+                {tab === 'all' && <View style={styles.searchBar}>
                     <Icon name="search" size={17} />
                     <TextInput
                         style={styles.searchInput}
@@ -260,13 +284,74 @@ export default function AccessListFront() {
                             <Icon name="close" size={14} color={COLORS.textDim} />
                         </Pressable>
                     )}
-                </View>
+                </View>}
             </View>
 
             {list.loading ? (
-                <StateView icon="spinner" title="Loading installed apps" subtitle="Reading packages and permissions…" />
+                <StateView icon="spinner" title="Loading installed apps" subtitle="Reading packages and permissions" />
             ) : list.loadError ? (
                 <StateView icon="alert" tone="danger" title="Couldn't load apps" subtitle={list.loadError} actionLabel="Retry" onAction={list.reload} />
+            ) : tab === 'overview' && groupMeta ? (
+                <FlatList
+                    data={groupApps}
+                    keyExtractor={(item) => item.id}
+                    contentContainerStyle={styles.listContent}
+                    ListHeaderComponent={(
+                        <View style={styles.groupHeader}>
+                            <Pressable onPress={() => setGroup(null)} style={styles.groupBack} accessibilityRole="button" accessibilityLabel="Back to overview">
+                                <Ionicons name="chevron-back" size={18} color="#fff" />
+                            </Pressable>
+                            <View style={styles.groupHeaderText}>
+                                <Text style={styles.groupTitle}>{groupMeta.label} access</Text>
+                                <Text style={styles.groupSub}>{groupApps.length} apps can use this permission</Text>
+                            </View>
+                        </View>
+                    )}
+                    renderItem={({ item }) => <AppRow app={item} onPress={() => list.openApp(item)} />}
+                    ListEmptyComponent={<StateView icon="search" title="No apps" subtitle="No installed app requests this permission." />}
+                    showsVerticalScrollIndicator={false}
+                />
+            ) : tab === 'overview' ? (
+                <ScrollView contentContainerStyle={styles.overviewContent} showsVerticalScrollIndicator={false}>
+                    <Text style={styles.overviewHint}>Apps with access to sensitive permissions</Text>
+                    <View style={styles.overviewGrid}>
+                        {overview.map((g) => {
+                            const tone = OVERVIEW_TONES[g.key] || { fg: COLORS.accent, bg: COLORS.accentDim };
+                            const pct = total ? Math.round((g.count / total) * 100) : 0;
+                            return (
+                                <Pressable
+                                    key={g.key}
+                                    onPress={() => setGroup(g.key)}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`${g.count} apps with ${g.label} access`}
+                                    style={({ pressed }) => [styles.overviewCard, pressed && styles.overviewCardPressed]}
+                                >
+                                    <View pointerEvents="none" style={styles.ringLayer}>
+                                        <View style={[styles.ring, { width: 150, height: 150, borderRadius: 75, top: -75, right: -75, backgroundColor: tone.bg, opacity: 0.55 }]} />
+                                        <View style={[styles.ring, { width: 110, height: 110, borderRadius: 55, top: -55, right: -55, borderWidth: 1.5, borderColor: tone.fg, opacity: 0.16 }]} />
+                                        <View style={[styles.ring, { width: 76, height: 76, borderRadius: 38, top: -38, right: -38, borderWidth: 1.5, borderColor: tone.fg, opacity: 0.22 }]} />
+                                        <View style={[styles.ring, { width: 120, height: 120, borderRadius: 60, bottom: -70, left: -50, borderWidth: 1.5, borderColor: tone.fg, opacity: 0.1 }]} />
+                                        <View style={[styles.ring, { width: 80, height: 80, borderRadius: 40, bottom: -48, left: -30, borderWidth: 1.5, borderColor: tone.fg, opacity: 0.14 }]} />
+                                    </View>
+                                    <View style={styles.overviewTop}>
+                                        <View style={[styles.overviewIcon, { backgroundColor: tone.bg }]}>
+                                            <Ionicons name={g.icon} size={20} color={tone.fg} />
+                                        </View>
+                                        <View style={[styles.overviewPill, { backgroundColor: tone.bg }]}>
+                                            <Text style={[styles.overviewPillText, { color: tone.fg }]}>{pct}%</Text>
+                                        </View>
+                                    </View>
+                                    <Text style={styles.overviewCount}>{g.count}</Text>
+                                    <Text style={styles.overviewLabel}>{g.label}</Text>
+                                    <View style={styles.overviewTrack}>
+                                        <View style={[styles.overviewFill, { width: `${pct}%`, backgroundColor: tone.fg }]} />
+                                    </View>
+                                    <Text style={styles.overviewSub}>{g.count} of {total} apps</Text>
+                                </Pressable>
+                            );
+                        })}
+                    </View>
+                </ScrollView>
             ) : (
                 <FlatList
                     data={list.filtered}
@@ -279,41 +364,63 @@ export default function AccessListFront() {
             )}
 
             <ScanModal scan={scan} totalCount={list.apps?.length ?? 0} />
-        </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    root: { flex: 1, backgroundColor: COLORS.bg },
-    header: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
-    headerTitle: { color: COLORS.text, fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
+    root: { flex: 1, backgroundColor: COLORS.bg, paddingBottom: 50 },
+    header: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 4 },
+    headerTitle: { color: '#000', fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
     headerAccent: { color: COLORS.accent },
     content: { paddingHorizontal: 16 },
     banner: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.accentDim, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, padding: 12, marginTop: 8 },
-    bannerIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: COLORS.surfaceHigh, alignItems: 'center', justifyContent: 'center' },
+    bannerIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: "#fff", alignItems: 'center', justifyContent: 'center' },
     bannerText: { flex: 1, marginLeft: 10, marginRight: 8 },
     bannerTitle: { color: COLORS.text, fontSize: 14.5, fontWeight: '700' },
-    bannerDesc: { color: COLORS.textDim, fontSize: 12, lineHeight: 16.5, marginTop: 3 },
+    bannerDesc: { color: COLORS.textDim, fontSize: 12 },
     scanButton: { backgroundColor: COLORS.accent, borderRadius: 999, paddingHorizontal: 16, paddingVertical: 11 },
     scanButtonPressed: { opacity: 0.75 },
     scanButtonText: { color: COLORS.onAccent, fontSize: 12.5, fontWeight: '800' },
     scanningRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     tabBar: { flexDirection: 'row', marginTop: 14, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-    tab: { paddingHorizontal: 20, paddingVertical: 10, backgroundColor: COLORS.surfaceHigh, borderTopLeftRadius: 10, borderTopRightRadius: 10 },
+    tab: { paddingHorizontal: 20, paddingVertical: 10, borderTopLeftRadius: 10, borderTopRightRadius: 10 },
+    tabActive: { backgroundColor: COLORS.surfaceHigh },
+    overviewContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 110 },
+    overviewHint: { color: COLORS.textDim, fontSize: 13, marginBottom: 15, fontWeight: "bold" },
+    overviewGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 },
+    overviewCard: { width: '48%', backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: '#EAEAEA', padding: 14, overflow: 'hidden' },
+    overviewCardPressed: { backgroundColor: '#FAFBFC', transform: [{ scale: 0.98 }] },
+    ringLayer: { ...StyleSheet.absoluteFillObject },
+    ring: { position: 'absolute' },
+    groupHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+    groupBack: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
+    groupHeaderText: { flex: 1, marginLeft: 12 },
+    groupTitle: { color: '#000', fontSize: 18, fontWeight: '800' },
+    groupSub: { color: COLORS.textDim, fontSize: 12.5, marginTop: 2 },
+    overviewTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    overviewIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+    overviewPill: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
+    overviewPillText: { fontSize: 11.5, fontWeight: '800' },
+    overviewCount: { color: '#000', fontSize: 34, fontWeight: '800', letterSpacing: -1, marginTop: 14 },
+    overviewLabel: { color: '#000', fontSize: 14, fontWeight: '700', marginTop: 0 },
+    overviewTrack: { height: 6, borderRadius: 3, backgroundColor: '#F1F3F5', marginTop: 12, overflow: 'hidden' },
+    overviewFill: { height: 6, borderRadius: 3 },
+    overviewSub: { color: COLORS.textDim, fontSize: 11.5, marginTop: 6 },
     tabText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
     tabUnderline: { position: 'absolute', left: 0, right: 0, bottom: -1, height: 2, backgroundColor: COLORS.accent },
     searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 12, paddingHorizontal: 12, height: 44, marginTop: 10 },
     searchInput: { flex: 1, marginLeft: 8, color: COLORS.text, fontSize: 14, paddingVertical: 0 },
-    listContent: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 28 },
+    listContent: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 110 },
     row: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface, borderRadius: 14, padding: 12, marginBottom: 10, overflow: 'hidden' },
     rowPressed: { backgroundColor: COLORS.surfaceHigh },
     rowBody: { flex: 1, marginLeft: 12, marginRight: 8 },
     rowName: { color: COLORS.text, fontSize: 14.5, fontWeight: '700' },
-    rowCount: { color: COLORS.textDim, fontSize: 12.5, marginTop: 2 },
-    rowSummary: { color: COLORS.textDim, fontSize: 11.5, marginTop: 2 },
+    rowCount: { color: COLORS.textDim, fontSize: 12.5 },
+    rowSummary: { color: COLORS.textDim, fontSize: 11.5 },
     stateView: { alignItems: 'center', paddingTop: 64, paddingHorizontal: 32 },
-    stateTitle: { color: COLORS.text, fontSize: 15, fontWeight: '700', marginTop: 14, textAlign: 'center' },
-    stateSubtitle: { color: COLORS.textDim, fontSize: 12.5, marginTop: 6, textAlign: 'center', lineHeight: 18 },
+    stateTitle: { color: COLORS.text, fontSize: 16, fontWeight: '700', marginTop: 14, textAlign: 'center' },
+    stateSubtitle: { color: COLORS.textDim, fontSize: 14, marginTop: 1, textAlign: 'center', lineHeight: 18 },
     stateButton: { backgroundColor: COLORS.accent, borderRadius: 999, paddingHorizontal: 20, paddingVertical: 10, marginTop: 16 },
     stateButtonText: { color: COLORS.onAccent, fontWeight: '800', fontSize: 13 },
     modalOverlay: { flex: 1, backgroundColor: COLORS.bg, opacity: 0.97, justifyContent: 'center', alignItems: 'center', padding: 20 },

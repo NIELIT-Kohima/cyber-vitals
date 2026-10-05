@@ -289,3 +289,27 @@ export function summarizePermissions(app, visible = 2) {
     if (!labels.length) return 'No declared permissions';
     return rest > 0 ? `${labels.join(', ')} +${rest} more` : labels.join(', ');
 }
+
+export const OVERVIEW_GROUPS = [
+    { key: 'location', label: 'Location', icon: 'location', perms: ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'ACCESS_BACKGROUND_LOCATION'] },
+    { key: 'contacts', label: 'Contacts', icon: 'people', perms: ['READ_CONTACTS'] },
+    { key: 'audio', label: 'Audio', icon: 'mic', perms: ['RECORD_AUDIO'] },
+    { key: 'sms', label: 'Read SMS', icon: 'chatbubble-ellipses', perms: ['READ_SMS'] },
+    { key: 'camera', label: 'Camera', icon: 'camera', perms: ['CAMERA'] },
+    { key: 'storage', label: 'Internal Storage', icon: 'folder-open', perms: ['READ_EXTERNAL_STORAGE', 'MANAGE_EXTERNAL_STORAGE', 'READ_MEDIA_IMAGES', 'READ_MEDIA_VIDEO', 'READ_MEDIA_AUDIO'] },
+];
+
+const shortPerm = (p) => String(p).split('.').pop();
+
+export const appsWithGroup = (apps, key) => {
+    const group = OVERVIEW_GROUPS.find((g) => g.key === key);
+    if (!group) return [];
+    return (apps || []).filter((app) => (app.permissions || []).some((p) => group.perms.includes(shortPerm(p))));
+};
+
+export function computeOverview(apps) {
+    return OVERVIEW_GROUPS.map((group) => ({
+        ...group,
+        count: appsWithGroup(apps, group.key).length,
+    }));
+}

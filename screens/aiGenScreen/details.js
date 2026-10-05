@@ -13,7 +13,7 @@ import {
     useWindowDimensions,
 } from 'react-native';
 import { COLORS } from '../../constants';
-import { AiGenError, UPLOAD_COPY, ERR, analyze, formatBytes, pickImage, supportNote } from './aiGenFunc';
+import { AiGenError, UPLOAD_COPY, ERR, analyze, formatBytes, pickImage, supportNote } from './details-function';
 
 const STATUS_PAD = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
 
@@ -166,21 +166,11 @@ function Icon({ name, size = 20, color = COLORS.text, style }) {
 }
 
 
-function Header({ title, onBack }) {
+function Header() {
     return (
         <View style={s.header}>
-            <Pressable
-                onPress={onBack}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel="Go back"
-                android_ripple={{ color: COLORS.surfaceHigh, borderless: true }}
-                style={({ pressed }) => [s.headerBack, pressed && s.pressed]}
-            >
-                <Icon name="chevron" size={17} color={COLORS.text} />
-            </Pressable>
             <Text style={s.headerTitle} numberOfLines={1}>
-                {title}
+                Content <Text style={{ color: COLORS.accent }}>Buster</Text>
             </Text>
         </View>
     );
@@ -231,9 +221,13 @@ function UploadPane({ busy, onLibrary, onCamera }) {
                 </View>
             ) : (
                 <>
-                    <Icon name="imagePlus" size={92} color={COLORS.textDim} />
-                    <Text style={s.dropTitle}>Upload an image</Text>
-                    <Text style={s.dropSub}>{'Check whether an image is likely\nAI-generated.'}</Text>
+                    <Image
+                        source={require('../../assets/searching.gif')}
+                        style={s.searchingGif}
+                        resizeMode="contain"
+                    />
+                    <Text style={s.dropTitle}>Upload Image</Text>
+                    <Text style={s.dropSub}>{'Check whether an image is likely\nAI-generated'}</Text>
 
                     <View style={s.capRow}>
                         {UPLOAD_COPY.capabilities.map((cap) => (
@@ -415,8 +409,8 @@ export default function AiContentBusterScreen({ onBack = () => { } }) {
 
     return (
         <View style={s.page}>
-            <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
-            <Header title="AI Content Buster" onBack={onBack} />
+            <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+            <Header />
 
             <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
                 {showUpload ? (
@@ -460,7 +454,7 @@ export default function AiContentBusterScreen({ onBack = () => { } }) {
 
             <Modal visible={fullOpen && !!state.meta} onRequestClose={closeFull} animationType="fade">
                 <View style={s.page}>
-                    <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
+                    <StatusBar barStyle="dark-content" backgroundColor="#fff" />
                     <View style={s.modalBar}>
                         <Text style={s.modalName} numberOfLines={1}>
                             {state.meta?.name}
@@ -485,21 +479,18 @@ export default function AiContentBusterScreen({ onBack = () => { } }) {
 
 
 const s = StyleSheet.create({
-    page: { flex: 1, backgroundColor: COLORS.bg, paddingTop: STATUS_PAD },
+    page: { flex: 1, backgroundColor: COLORS.bg },
     scrollContent: { padding: 20, paddingBottom: 44, gap: 16 },
     pressed: { opacity: 0.75 },
     disabled: { opacity: 0.45 },
 
     header: {
-        height: 56,
-        alignItems: 'center',
-        justifyContent: 'center',
+        paddingHorizontal: 20,
+        paddingTop: 18,
+        paddingBottom: 4,
         backgroundColor: COLORS.bg,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: COLORS.border,
     },
-    headerBack: { position: 'absolute', left: 8, top: 0, bottom: 0, width: 44, alignItems: 'center', justifyContent: 'center' },
-    headerTitle: { color: COLORS.text, fontSize: 17, fontWeight: '700', letterSpacing: 0.2, paddingHorizontal: 52 },
+    headerTitle: { color: '#000', fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
 
     dropzone: {
         backgroundColor: COLORS.surface,
@@ -507,14 +498,19 @@ const s = StyleSheet.create({
         borderStyle: 'dashed',
         borderColor: COLORS.border,
         borderRadius: 20,
-        paddingHorizontal: 24,
+        paddingHorizontal: 12,
         paddingVertical: 44,
+        paddingTop: 15,
         alignItems: 'center',
+    },
+    searchingGif: {
+        width: 250,
+        height: 250,
     },
     busyBox: { minHeight: 320, alignItems: 'center', justifyContent: 'center', gap: 14 },
     busyText: { color: COLORS.textDim, fontSize: 14 },
-    dropTitle: { color: COLORS.text, fontSize: 22, fontWeight: '700', marginTop: 22 },
-    dropSub: { color: COLORS.textDim, fontSize: 15, lineHeight: 22, textAlign: 'center', marginTop: 8, marginBottom: 26 },
+    dropTitle: { color: COLORS.text, fontSize: 22, fontWeight: '700' },
+    dropSub: { color: COLORS.textDim, fontSize: 15, textAlign: 'center', marginBottom: 10 },
     note: { color: COLORS.textDim, fontSize: 13, lineHeight: 20, textAlign: 'center' },
 
     primaryBtn: {
@@ -612,8 +608,8 @@ const s = StyleSheet.create({
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'center',
-        gap: 8,
-        marginTop: 18,
+        gap: 6,
+        marginTop: 14,
         marginBottom: 14,
     },
     capChip: {
@@ -621,14 +617,13 @@ const s = StyleSheet.create({
         borderColor: COLORS.border,
         borderWidth: 1,
         borderRadius: 999,
-        paddingHorizontal: 12,
-        paddingVertical: 7,
+        paddingHorizontal: 9,
+        paddingVertical: 5,
     },
     capChipText: {
         color: COLORS.text,
-        fontSize: 12.5,
+        fontSize: 11.5,
         fontWeight: '600',
-        letterSpacing: 0.1,
     },
     privacyNote: {
         color: COLORS.textDim,

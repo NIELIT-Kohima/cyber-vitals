@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
     Native, rangeBounds, axisBounds, binsFor, pairSessions, buildTimeline,
     bucketLabel, deriveFlags, simMeta, simSessions, fmtDate,
-} from './listFunc';
+} from './list-function';
 
 export const loadDetail = async (pkg, rangeKey = 'today') => {
     const bounds = rangeBounds(rangeKey);

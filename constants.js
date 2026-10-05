@@ -1,17 +1,18 @@
 export const COLORS = {
-    bg: '#0A0F0C',
-    surface: '#111814',
-    surfaceHigh: '#18211C',
-    border: '#20302A',
-    text: '#EDF3EF',
-    textDim: '#7E8B84',
-    accent: '#2EE59D',
-    accentDim: '#12352A',
-    onAccent: '#062B1D',
-    warn: '#F0B429',
-    warnDim: '#3A2E14',
-    danger: '#FF5C72',
-    dangerDim: '#3A1620',
+    bg: '#F7F9FC',
+    surface: '#FFFFFF',
+    surfaceHigh: '#F1F5F9',
+    border: '#E2E8F0',
+    text: '#000000',
+    textDim: '#64748B',
+    accent: '#31bba1',
+    accentDim: '#E6F7F4',
+    onAccent: '#FFFFFF',
+    warn: '#D97706',
+    warnDim: '#FEF3C7',
+    danger: '#DC2626',
+    dangerDim: '#FEE2E2',
+    primary: '#003088',
 };
 
 export const STORES = {
@@ -31,7 +32,7 @@ export const PROTO_LABELS = { tls: 'TLS', quic: 'QUIC', clear: 'Cleartext', ipon
 export const LIMITS = { oldSdk: 22, staleDays: 365 * 4 };
 
 export const FLAGS = {
-    verified: { label: 'Verified by Play', tone: 'accent', tick: '✓' },
+    verified: { label: 'Verified', tone: 'accent', tick: '✓' },
     oem: { label: 'Verified by OEM', tone: 'accent', tick: '✓' },
     preinstalled: { label: 'Preinstalled', tone: 'accent', tick: '✓' },
     unknownOrigin: { label: 'Unknown Origin', tone: 'warn', tick: '!' },

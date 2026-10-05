@@ -1,4 +1,4 @@
-package com.anonymous.icsas2
+package cyber.vitals.nielit
 
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
