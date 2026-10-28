@@ -59,6 +59,12 @@
         </intent-filter>
     </receiver>
 
+    <!-- Disable react-native-android-notification-listener's BootUpReceiver to prevent crash on boot.
+         NotificationListenerService is managed automatically by the Android system and must NOT be started with startForegroundService. -->
+    <receiver
+        android:name="com.lesimoes.androidnotificationlistener.BootUpReceiver"
+        tools:node="remove" />
+
     <activity 
         android:name=".MainActivity" 
         android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize|assetsPaths" 

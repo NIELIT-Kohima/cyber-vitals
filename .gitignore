@@ -6,7 +6,7 @@ node_modules/
 .expo/
 .expo-shared/
 
-android/
+# android/ is tracked for custom native modules and EAS bare build
 ios/
 build/
 dist/
@@ -14,7 +14,6 @@ dist/
 .metro/
 .cache/
 *.log
-
 
 .env
 .env.*
@@ -40,3 +39,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 .gradle/
+.kotlin/
+*.iml
+.cxx/
+local.properties
