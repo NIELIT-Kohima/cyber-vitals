@@ -111,7 +111,7 @@ const NotifCard = React.memo(function NotifCard({ item, selecting, selected, exp
     const sev = item.analysis?.severity;
     const chip = sev ? F.SEVERITY_CHIP[sev] : null;
     const lc = item.analysis?.linkCheck;
-    const displayText = item.translatedText || item.body || '';
+    const displayText = item.body || item.title || '';
     return (
         <Pressable
             onPress={onPress}
@@ -139,8 +139,6 @@ const NotifCard = React.memo(function NotifCard({ item, selecting, selected, exp
                             <Chip tone="warn" small>Unverified link · caution</Chip>
                         )}
                         {item.translationStatus === 'translated' && <Chip tone="accent" small>Translated</Chip>}
-                        {item.translationStatus === 'model_missing' && <Chip tone="warn" small>Model missing</Chip>}
-                        {item.translationStatus === 'stalled' && <Chip tone="dim" small>Translation stalled</Chip>}
                     </View>
 
                     {expanded && (
@@ -183,64 +181,38 @@ const NotifCard = React.memo(function NotifCard({ item, selecting, selected, exp
 });
 
 
-const STAGE_LABELS = ['Preparing selection', 'Language identification', 'Server analysis', 'Saving & labeling'];
+const STAGE_LABELS = ['Preparing selection', 'Server analysis', 'Saving & labeling'];
 
-const ProgressModal = ({ progress: p, phase, blocked, onDownload, onSendWithout, onCancel, downloading }) => {
-    if (!p && phase !== 'decision') return null;
+const ProgressModal = ({ progress: p }) => {
+    if (!p) return null;
     return (
-        <Modal transparent animationType="fade" visible onRequestTransparent={() => { }}>
+        <Modal transparent animationType="fade" visible onRequestClose={() => { }}>
             <View style={st.overlay}>
                 <View style={st.modalCard}>
-                    <Text style={st.modalTitle}>{phase === 'decision' ? 'Missing translation models' : 'Analyzing notifications'}</Text>
+                    <Text style={st.modalTitle}>Analyzing notifications</Text>
 
-                    {phase !== 'decision' && p && (
-                        <>
-                            <View style={st.stageList}>
-                                {STAGE_LABELS.map((label, i) => {
-                                    const done = p.stageIndex > i;
-                                    const active = p.stageIndex === i;
-                                    return (
-                                        <View key={label} style={st.stageRow}>
-                                            <View style={[st.stageDot, { backgroundColor: done ? COLORS.accent : active ? COLORS.warn : COLORS.surfaceHigh }]}>
-                                                {done ? <Text style={st.stageTick}>✓</Text> : null}
-                                                {active ? <View style={st.stagePulse} /> : null}
-                                            </View>
-                                            <Text style={[st.stageLabel, { color: done ? COLORS.text : active ? COLORS.text : COLORS.textDim }]}>
-                                                {label}
-                                                {active && p.itemCount ? ` · ${Math.min(p.itemIndex + 1, p.itemCount)}/${p.itemCount}` : ''}
-                                            </Text>
-                                        </View>
-                                    );
-                                })}
-                            </View>
-                            <View style={st.barTrack}>
-                                <View style={[st.barFill, { width: `${p.percent}%` }]} />
-                            </View>
-                            <Text style={st.progressMsg} numberOfLines={1}>{p.message || 'Working…'} · {p.percent}%</Text>
-                        </>
-                    )}
-
-                    {phase === 'decision' && (
-                        <>
-                            <Text style={st.modalBody}>
-                                These items are in languages whose on-device translation model is not downloaded. They will NOT be sent unless you download the model:
-                            </Text>
-                            <ScrollView style={st.blockedList} nestedScrollEnabled>
-                                {blocked.map((b) => (
-                                    <View key={b.id} style={st.blockedRow}>
-                                        <Text style={st.blockedText} numberOfLines={1}>
-                                            {b.appLabel} · [{b.lang}] {b.preview}
-                                        </Text>
+                    <View style={st.stageList}>
+                        {STAGE_LABELS.map((label, i) => {
+                            const done = p.stageIndex > i;
+                            const active = p.stageIndex === i;
+                            return (
+                                <View key={label} style={st.stageRow}>
+                                    <View style={[st.stageDot, { backgroundColor: done ? COLORS.accent : active ? COLORS.warn : COLORS.surfaceHigh }]}>
+                                        {done ? <Text style={st.stageTick}>✓</Text> : null}
+                                        {active ? <View style={st.stagePulse} /> : null}
                                     </View>
-                                ))}
-                            </ScrollView>
-                            <View style={st.modalActions}>
-                                <Btn label={downloading ? 'Downloading…' : 'Download & include'} kind="primary" onPress={onDownload} disabled={downloading} />
-                                <Btn label="Send without them" onPress={onSendWithout} />
-                                <Btn label="Cancel" onPress={onCancel} />
-                            </View>
-                        </>
-                    )}
+                                    <Text style={[st.stageLabel, { color: done ? COLORS.text : active ? COLORS.text : COLORS.textDim }]}>
+                                        {label}
+                                        {active && p.itemCount ? ` · ${Math.min(p.itemIndex + 1, p.itemCount)}/${p.itemCount}` : ''}
+                                    </Text>
+                                </View>
+                            );
+                        })}
+                    </View>
+                    <View style={st.barTrack}>
+                        <View style={[st.barFill, { width: `${p.percent}%` }]} />
+                    </View>
+                    <Text style={st.progressMsg} numberOfLines={1}>{p.message || 'Working…'} · {p.percent}%</Text>
                 </View>
             </View>
         </Modal>
@@ -264,12 +236,6 @@ export default function NotificationScreen() {
     const [expandedId, setExpandedId] = useState(null);
     const [progress, setProgress] = useState(null);
     const [phase, setPhase] = useState('idle');
-    const [blocked, setBlocked] = useState([]);
-    const [pendingSendable, setPendingSendable] = useState([]);
-    const [decisionIds, setDecisionIds] = useState([]);
-    const [downloading, setDownloading] = useState(false);
-    const [liModal, setLiModal] = useState(null);
-    const [trModal, setTrModal] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [snack, setSnack] = useState(null);
     const [warn, setWarn] = useState(null);
@@ -308,11 +274,6 @@ export default function NotificationScreen() {
                 const st = await F.getListenerStatus();
                 if (!mounted.current) return;
                 setListener({ ...st, checked: true });
-                const li = await F.checkLanguageIdModel();
-                if (!mounted.current) return;
-                if (!li.ready) setLiModal(li);
-                await F.processPendingTranslations((it) => mounted.current && setTrModal(it));
-                if (!mounted.current) return;
                 setBoot('ready');
             } catch (e) {
                 if (mounted.current) {
@@ -327,7 +288,6 @@ export default function NotificationScreen() {
         if (boot !== 'ready') return undefined;
         return F.subscribeLiveUpdates(() => {
             reload();
-            F.processPendingTranslations((it) => mounted.current && setTrModal(it));
         });
     }, [boot, reload]);
 
@@ -370,7 +330,6 @@ export default function NotificationScreen() {
             setSelected([]);
             setPhase('idle');
             setProgress(null);
-            setBlocked([]);
             showSnack(`Analyzed ${res.analyzed}${res.failed ? ` · ${res.failed} failed` : ''}`);
             return res;
         },
@@ -381,19 +340,8 @@ export default function NotificationScreen() {
         async (ids) => {
             if (busy.current || !ids?.length) return;
             busy.current = true;
-            setDecisionIds(ids);
-            setPhase('running');
-            setProgress(F.prepareBatchForAnalysis ? null : null);
             try {
-                const prep = await F.prepareBatchForAnalysis(ids, { onProgress: safeProgress });
-                if (!mounted.current) return;
-                if (prep.blocked.length) {
-                    setBlocked(prep.blocked);
-                    setPendingSendable(prep.sendable);
-                    setPhase('decision');
-                    return;
-                }
-                await submit(prep.sendable);
+                await submit(ids);
             } catch (e) {
                 if (mounted.current) {
                     showSnack(`Scan failed: ${e?.message || e}`);
@@ -404,84 +352,16 @@ export default function NotificationScreen() {
                 busy.current = false;
             }
         },
-        [safeProgress, submit, showSnack],
+        [submit, showSnack],
     );
-
-    const onDownloadAndRetry = useCallback(async () => {
-        setDownloading(true);
-        try {
-            const userLang = await F.getUserLanguage();
-            await F.downloadModelsFor(blocked.map((b) => b.lang), userLang, safeProgress);
-            if (!mounted.current) return;
-            setDownloading(false);
-            setPhase('running');
-            const prep = await F.prepareBatchForAnalysis(decisionIds, { onProgress: safeProgress });
-            if (!mounted.current) return;
-            if (prep.blocked.length) {
-                setBlocked(prep.blocked);
-                setPendingSendable(prep.sendable);
-                setPhase('decision');
-                showSnack('Some models still unavailable');
-                return;
-            }
-            await submit(prep.sendable);
-        } catch (e) {
-            if (mounted.current) showSnack(`Download failed: ${e?.message || e}`);
-        } finally {
-            if (mounted.current) setDownloading(false);
-        }
-    }, [blocked, decisionIds, safeProgress, submit, showSnack]);
-
-    const onSendWithout = useCallback(async () => {
-        const ids = pendingSendable;
-        setPhase('running');
-        setBlocked([]);
-        if (!ids.length) {
-            setPhase('idle');
-            setProgress(null);
-            showSnack('Nothing sendable in this batch');
-            return;
-        }
-        try {
-            await submit(ids);
-            showSnack(`Skipped ${blocked.length} item(s) missing models`);
-        } catch (e) {
-            showSnack(`Scan failed: ${e?.message || e}`);
-            setPhase('idle');
-            setProgress(null);
-        }
-    }, [pendingSendable, blocked.length, submit, showSnack]);
-
-    const onCancelDecision = useCallback(() => {
-        setPhase('idle');
-        setProgress(null);
-        setBlocked([]);
-        setPendingSendable([]);
-        setSelecting(false);
-        setSelected([]);
-    }, []);
 
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
         await reload();
-        await F.processPendingTranslations((it) => mounted.current && setTrModal(it));
         if (mounted.current) setRefreshing(false);
     }, [reload]);
 
     const quickScan = useCallback(() => runPipeline(F.autoPickIds(F.filterItems(items, win === 'all' ? 'h24' : win, selectedPkgs))), [runPipeline, items, win, selectedPkgs]);
-
-    const resolveTr = useCallback(
-        async (action) => {
-            const id = trModal?.id;
-            setTrModal(null);
-            if (!id) return;
-            const res = await F.resolveTranslation(id, action);
-            await reload();
-            showSnack(action === 'download' ? (res.ok ? 'Model downloaded & translated' : 'Download failed') : 'Translation stalled for this item');
-            F.processPendingTranslations((it) => mounted.current && setTrModal(it));
-        },
-        [trModal, reload, showSnack],
-    );
 
     const renderCard = useCallback(
         ({ item }) => (
@@ -802,47 +682,7 @@ export default function NotificationScreen() {
                 </View>
             </RBSheet>
 
-            {/* language-id bootstrap popup */}
-            <Modal transparent visible={!!liModal} animationType="fade" onRequestClose={() => setLiModal(null)}>
-                <View style={st.overlay}>
-                    <View style={st.modalCard}>
-                        <Text style={st.modalTitle}>Language model missing</Text>
-                        <Text style={st.modalBody}>
-                            On-device language identification isn’t ready. You can go back and continue without language features, or install/update Google Play services which provides the model.
-                        </Text>
-                        <View style={st.modalActions}>
-                            <Btn label="Go back" onPress={() => setLiModal(null)} />
-                            <Btn label="Open source" kind="primary" onPress={() => F.openLanguageIdSource()} />
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-
-            {/* translation model popup */}
-            <Modal transparent visible={!!trModal} animationType="fade" onRequestClose={() => resolveTr('stall')}>
-                <View style={st.overlay}>
-                    <View style={st.modalCard}>
-                        <Text style={st.modalTitle}>Translate this message?</Text>
-                        <Text style={st.modalBody}>
-                            “{trModal?.appLabel}” sent a message in [{trModal?.lang}]. The on-device translation model for it is not downloaded.
-                        </Text>
-                        <View style={st.modalActions}>
-                            <Btn label="Not now" onPress={() => resolveTr('stall')} />
-                            <Btn label="Download & translate" kind="primary" onPress={() => resolveTr('download')} />
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-
-            <ProgressModal
-                progress={progress}
-                phase={phase}
-                blocked={blocked}
-                downloading={downloading}
-                onDownload={onDownloadAndRetry}
-                onSendWithout={onSendWithout}
-                onCancel={onCancelDecision}
-            />
+            <ProgressModal progress={progress} />
 
             {!!snack && (
                 <View style={st.snack} pointerEvents="none">

@@ -5,6 +5,7 @@ import RNListener, {
 } from 'react-native-android-notification-listener';
 import IdentifyLanguages from '@react-native-ml-kit/identify-languages';
 import TranslateText from '@react-native-ml-kit/translate-text';
+import { classifyTextsApi } from '../../apiConfig';
 
 export const HEADLESS_TASK_NAME = RNAndroidNotificationListenerHeadlessJsName;
 export const MAX_BATCH = 10;
@@ -26,10 +27,9 @@ const WINDOW_MS = { all: null, h1: 3.6e6, h12: 4.32e7, h24: 8.64e7 };
 const TRUSTED_SLD = ['.bank.in', '.gov.in', '.nic.in', '.mil.in', '.fin.in'];
 
 const STAGES = [
-    { key: 'prepare', label: 'Preparing selection', weight: 0.05 },
-    { key: 'lang', label: 'Language identification', weight: 0.45 },
-    { key: 'upload', label: 'Server analysis', weight: 0.35 },
-    { key: 'finalize', label: 'Saving & labeling', weight: 0.15 },
+    { key: 'prepare', label: 'Preparing selection', weight: 0.15 },
+    { key: 'upload', label: 'Server analysis', weight: 0.65 },
+    { key: 'finalize', label: 'Saving & labeling', weight: 0.2 },
 ];
 const stageBase = (key) =>
     STAGES.slice(0, STAGES.findIndex((s) => s.key === key)).reduce((a, s) => a + s.weight, 0);
@@ -305,7 +305,7 @@ export function createNotificationHeadlessHandler() {
             if (lang) {
                 item.lang = lang;
                 item.langStatus = lang === 'und' ? 'und' : 'ok';
-                item.translationStatus = needsTranslation(lang) ? 'pending' : 'none';
+                item.translationStatus = 'none';
             }
             await upsertItems([item]);
         } catch (e) {
@@ -486,70 +486,12 @@ export async function downloadModelsFor(langs, targetLang, onProgress) {
 
 const translationPopupShown = new Set();
 
-export async function processPendingTranslations(onPopup) {
-    const store = await getStore();
-    const userLang = await getUserLanguage();
-    const queued = listItems(store).filter((it) => it.translationStatus === 'pending' && searchTextOf(it));
-    for (const it of queued) {
-        let lang = it.lang;
-        if (!lang) {
-            lang = await detectLanguage(searchTextOf(it));
-            await patchItem(it.id, { lang, langStatus: lang ? (lang === 'und' ? 'und' : 'ok') : 'error' });
-        }
-        if (!lang || lang === 'und' || lang === userLang) {
-            await patchItem(it.id, { translationStatus: 'none' });
-            continue;
-        }
-        const ready = await isPairReady(lang, userLang);
-        if (ready) {
-            try {
-                const out = unwrapTranslation(
-                    await TranslateText.translate({
-                        text: searchTextOf(it),
-                        sourceLanguage: lang,
-                        targetLanguage: userLang,
-                        downloadModelIfNeeded: false,
-                    }),
-                );
-                await patchItem(it.id, { translatedText: out || null, translationStatus: out ? 'translated' : 'error' });
-            } catch {
-                await patchItem(it.id, { translationStatus: 'model_missing' });
-            }
-        } else {
-            await patchItem(it.id, { translationStatus: 'model_missing' });
-            if (onPopup && !translationPopupShown.has(it.id)) {
-                translationPopupShown.add(it.id);
-                onPopup({ ...it, lang });
-            }
-        }
-    }
+export async function processPendingTranslations() {
+    // Disabled: Translation popup and model downloads removed; notifications are directly analyzed.
 }
 
-export async function resolveTranslation(id, action) {
-    const store = await getStore();
-    const it = store.items[id];
-    if (!it) return { ok: false };
-    const userLang = await getUserLanguage();
-    if (action === 'stall') {
-        await patchItem(id, { translationStatus: 'stalled' });
-        return { ok: true, stalled: true };
-    }
-    try {
-        const out = unwrapTranslation(
-            await TranslateText.translate({
-                text: searchTextOf(it),
-                sourceLanguage: it.lang,
-                targetLanguage: userLang,
-                downloadModelIfNeeded: true,
-            }),
-        );
-        await markPairReady(it.lang, userLang);
-        await patchItem(id, { translatedText: out || null, translationStatus: out ? 'translated' : 'error' });
-        return { ok: !!out };
-    } catch (e) {
-        await patchItem(id, { translationStatus: 'model_missing' });
-        return { ok: false, error: e?.message };
-    }
+export async function resolveTranslation() {
+    return { ok: true };
 }
 
 
@@ -634,15 +576,59 @@ export const withAppMeta = async (items) => {
 
 export async function classifyOnServer(body) {
     if (!Array.isArray(body) || !body.length) throw new Error('Empty batch');
-    /*  BACKEND NOT BUILT: single stubbed transport line 
-     *   const res = await fetch(`${API_BASE}/v1/notifications/classify`, {
-     *     method: 'POST',
-     *     headers: { 'Content-Type': 'application/json' },
-     *     body: JSON.stringify(body),
-     *   });
-     *   if (!res.ok) throw new Error(`Server ${res.status}`);
-     *   return await res.json(); */
-    return dummyClassifyResponse(body); // stub
+    const texts = body.map((b) => [b.title, b.body].filter(Boolean).join(' - ') || 'Notification text');
+    const requestPayload = { texts };
+
+    console.log('[NotificationSecurity API Request Body]:', JSON.stringify(requestPayload, null, 2));
+
+    try {
+        const apiRes = await classifyTextsApi(texts);
+        console.log('[NotificationSecurity API Response]:', JSON.stringify(apiRes, null, 2));
+        const results = Array.isArray(apiRes?.results) ? apiRes.results : [];
+
+        return body.map((b, i) => {
+            const r = results[i] || {};
+            const label = String(r.label || '').toLowerCase();
+            const dist = typeof r.distance === 'number' ? r.distance : 0.5;
+            const matchConfidence = clamp01(1 - dist);
+            const isPhishing = label.includes('phish') || label.includes('scam') || label.includes('malicious');
+            const isSpam = label.includes('spam') || label.includes('promo');
+
+            const hasLinks = Array.isArray(b.links) && b.links.length > 0;
+            const linkUntrusted = hasLinks && b.links.some((x) => !parseRegistrableDomain(x).verified);
+
+            let suspScore = 0.05;
+            let spamScore = 0.05;
+            let suspMatch = null;
+            let spamMatch = null;
+
+            if (isPhishing) {
+                suspScore = Math.max(0.55, matchConfidence);
+                suspMatch = r.match || 'Phishing pattern detected';
+                if (linkUntrusted) suspScore = Math.min(0.99, suspScore + 0.15);
+            } else if (isSpam) {
+                spamScore = Math.max(0.5, matchConfidence);
+                spamMatch = r.match || 'Spam pattern detected';
+            } else if (linkUntrusted) {
+                suspScore = 0.35;
+            }
+
+            return {
+                item_id: b.item_id,
+                app_id: b.app_id,
+                suspicious_semantic_score: Math.round(clamp01(suspScore) * 100) / 100,
+                spam_adv_semantic_score: Math.round(clamp01(spamScore) * 100) / 100,
+                suspicious_matching_text: suspMatch,
+                spam_adv_matching_text: spamMatch,
+                raw_label: r.label,
+                raw_match: r.match,
+                distance: r.distance,
+            };
+        });
+    } catch (err) {
+        console.warn('classifyTextsApi failed, using fallback heuristic:', err);
+        return dummyClassifyResponse(body);
+    }
 }
 
 function normalizeServerResponse(raw, body) {
@@ -667,46 +653,25 @@ function normalizeServerResponse(raw, body) {
     });
 }
 
-
 export async function prepareBatchForAnalysis(ids, { onProgress } = {}) {
     const store = await getStore();
-    const userLang = await getUserLanguage();
     const picked = (ids || []).filter((id) => store.items[id]).slice(0, MAX_BATCH);
     if (!picked.length) throw new Error('Nothing selected');
-    onProgress?.(progress('prepare', 1, `Validating ${picked.length} item(s)`));
-    const sendable = [];
-    const blocked = [];
-    for (let i = 0; i < picked.length; i++) {
-        const it = store.items[picked[i]];
-        onProgress?.(progress('lang', i / picked.length, `Language check · ${it.appLabel}`, i, picked.length));
-        let lang = it.lang;
-        if (!lang && searchTextOf(it)) {
-            lang = await detectLanguage(searchTextOf(it));
-            await patchItem(it.id, { lang, langStatus: lang ? (lang === 'und' ? 'und' : 'ok') : 'error' });
-        }
-        if (lang && lang !== 'und' && lang !== userLang) {
-            const ready = await isPairReady(lang, userLang);
-            if (!ready) {
-                blocked.push({ id: it.id, appLabel: it.appLabel, lang, preview: it.title || it.body });
-                continue;
-            }
-        }
-        sendable.push(it.id);
-    }
-    onProgress?.(progress('lang', 1, 'Language checks complete', picked.length, picked.length));
-    return { sendable, blocked, userLang, total: picked.length };
+    onProgress?.(progress('prepare', 1, `Selected ${picked.length} item(s)`));
+    return { sendable: picked, blocked: [], userLang: 'en', total: picked.length };
 }
 
 export async function submitBatchForAnalysis(ids, { onProgress } = {}) {
     const store = await getStore();
     const items = (ids || []).map((id) => store.items[id]).filter(Boolean).slice(0, MAX_BATCH);
     if (!items.length) throw new Error('Nothing to send');
+    onProgress?.(progress('prepare', 1, `Packaging ${items.length} item(s)`));
     const body = buildRequestBody(items);
-    onProgress?.(progress('upload', 0.15, `Uploading ${items.length} item(s)`));
-    const raw = await classifyOnServer(body); // ← only stubbed piece
-    onProgress?.(progress('upload', 1, 'Server responded'));
+    onProgress?.(progress('upload', 0.25, `Analyzing ${items.length} item(s) on server…`));
+    const raw = await classifyOnServer(body);
+    onProgress?.(progress('upload', 1, 'Server analysis complete'));
     const results = normalizeServerResponse(raw, body);
-    onProgress?.(progress('finalize', 0.3, 'Applying results & link checks'));
+    onProgress?.(progress('finalize', 0.5, 'Applying security verdicts'));
     const batchId = hashId(`${now()}`);
     let analyzed = 0;
     await mutateStore((s) => {
@@ -737,7 +702,6 @@ export async function submitBatchForAnalysis(ids, { onProgress } = {}) {
     onProgress?.(progress('finalize', 1, 'Saved'));
     return { analyzed, failed: results.length - analyzed, batchId };
 }
-
 
 export function filterItems(items, windowKey, pkg) {
     const ms = WINDOW_MS[windowKey] ?? null;

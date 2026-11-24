@@ -189,13 +189,19 @@ function StatusCard() {
 function AppRow({ app, onOpen }) {
     const spark = store.spark(app.uid);
     const alert = store.hasCleartext(app.uid);
+    const badIpAlert = app.hasMalicious || store.hasMalicious(app.uid);
     return (
         <TouchableOpacity style={st.listRow} onPress={() => onOpen(app.uid)} activeOpacity={0.7}>
             <AppIcon app={app} />
             <View style={st.flex}>
                 <View style={st.rowC}>
                     <Text style={st.rowTitle} numberOfLines={1}>{app.label}</Text>
-                    {alert && <View style={st.alertDot}><Text style={st.alertDotTx}>!</Text></View>}
+                    {badIpAlert && (
+                        <View style={[st.alertDot, { backgroundColor: COLORS.danger }]}>
+                            <Text style={st.alertDotTx}>!</Text>
+                        </View>
+                    )}
+                    {!badIpAlert && alert && <View style={st.alertDot}><Text style={st.alertDotTx}>!</Text></View>}
                 </View>
                 <Text style={st.rowSub} numberOfLines={1}>{app.pkg}</Text>
             </View>
@@ -235,7 +241,36 @@ function ListScreen({ nav }) {
                     <Text style={[st.statVal, { color: COLORS.accent }]}>{stats.live}</Text>
                     <Text style={st.statLab}>Live connections</Text>
                 </View>
+                <View style={st.statDiv} />
+                <View style={st.statCell}>
+                    <Text style={[st.statVal, { color: stats.maliciousIps > 0 ? COLORS.danger : COLORS.textDim }]}>
+                        {stats.maliciousIps || 0}
+                    </Text>
+                    <Text style={st.statLab}>Malicious IPs</Text>
+                </View>
             </View>
+            {stats.maliciousIps > 0 && (
+                <View style={{
+                    backgroundColor: COLORS.dangerDim,
+                    borderColor: COLORS.danger,
+                    borderWidth: 1,
+                    borderRadius: 12,
+                    padding: 12,
+                    marginBottom: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                }}>
+                    <Text style={{ fontSize: 16, marginRight: 8, color: COLORS.danger, fontWeight: '700' }}>⚠</Text>
+                    <View style={{ flex: 1 }}>
+                        <Text style={{ color: COLORS.danger, fontWeight: '700', fontSize: 13 }}>
+                            Malicious IP Activity Detected
+                        </Text>
+                        <Text style={{ color: COLORS.danger, fontSize: 11.5, marginTop: 2 }}>
+                            {stats.maliciousIps} malicious IP(s) contacted. Inspect suspicious app connections below.
+                        </Text>
+                    </View>
+                </View>
+            )}
             <TouchableOpacity style={st.mapRow} onPress={nav.openTimeline} activeOpacity={0.7}>
                 <View style={st.mapIcon}><Text style={{ color: COLORS.accent }}>⇄</Text></View>
                 <Text style={st.mapTx}>Overall Network Map</Text>
@@ -302,13 +337,21 @@ function ListScreen({ nav }) {
 
 function EndpointRow({ ep, expanded, onToggle }) {
     useStore();
+    const isBad = Boolean(ep.isMalicious || store.isMalicious(ep.ip));
     return (
-        <View style={st.epWrap}>
+        <View style={[st.epWrap, isBad && { borderColor: COLORS.danger, borderWidth: 1 }]}>
             <TouchableOpacity style={st.epRow} onPress={onToggle} activeOpacity={0.7}>
-                <LetterIcon text={ep.domain || '•'} color={ep.domain ? COLORS.text : COLORS.textDim} />
+                <LetterIcon text={ep.domain || '•'} color={isBad ? COLORS.danger : (ep.domain ? COLORS.text : COLORS.textDim)} />
                 <View style={st.flex}>
-                    <Text style={st.rowTitle} numberOfLines={1}>{ep.domain || `Unknown (${ep.proto.toUpperCase()})`}</Text>
-                    <Text style={st.rowSub}>{ep.ip}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={[st.rowTitle, isBad && { color: COLORS.danger }]} numberOfLines={1}>{ep.domain || `Unknown (${ep.proto.toUpperCase()})`}</Text>
+                        {isBad && (
+                            <View style={{ marginLeft: 6, backgroundColor: COLORS.danger, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                                <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>MALICIOUS</Text>
+                            </View>
+                        )}
+                    </View>
+                    <Text style={[st.rowSub, isBad && { color: COLORS.danger, fontWeight: '600' }]}>{ep.ip}</Text>
                     <Text style={st.rowSub}>{fmtBytes(ep.bytes)} transferred</Text>
                 </View>
                 <View style={st.epRight}>

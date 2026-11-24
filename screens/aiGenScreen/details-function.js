@@ -1,5 +1,6 @@
 import { Image } from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
+import { detectAiImageApi, API_BASE_URL, API_ROUTES } from '../../apiConfig';
 
 export const SUPPORT = Object.freeze({
     formats: ['JPG', 'JPEG', 'PNG', 'WEBP'],
@@ -7,18 +8,8 @@ export const SUPPORT = Object.freeze({
 });
 
 export const API_CONFIG = Object.freeze({
-    url: 'https://api.example.dev/v1/detect',
-    timeoutMs: 1400,
-    fixedRequest: Object.freeze({
-        image_ref: 'fixed-placeholder-uri',
-        detectors: ['ai-generated', 'deepfake'],
-        profile_pic_mode: true,
-    }),
-    fixedResponse: Object.freeze({
-        result: 'likely ai generated',
-        confidence: 0.92,
-        model_version: 'detector-v3.2',
-    }),
+    url: `${API_BASE_URL}${API_ROUTES.DETECT_AI}`,
+    timeoutMs: 30000,
 });
 
 const MIME_LABELS = {
@@ -179,33 +170,37 @@ async function collectMeta(asset) {
 }
 
 export async function requestAnalysis(meta) {
-    const payload = API_CONFIG.fixedRequest;
-    void meta;
-    void payload;
-    await delay(API_CONFIG.timeoutMs);
-    // Real integration point:
-    // const res = await fetch(API_CONFIG.url, { method: 'POST', body: form });
-    // if (!res.ok) throw new AiGenError(ERR.NETWORK, 'Detector unreachable.', { retryable: true });
-    // return assertShape(await res.json());
-    return assertShape(API_CONFIG.fixedResponse);
+    try {
+        const res = await detectAiImageApi({
+            uri: meta.uri,
+            name: meta.name,
+            type: meta.mime,
+        });
+        return assertShape(res);
+    } catch (err) {
+        console.warn('detectAiImageApi failed:', err);
+        throw new AiGenError(ERR.NETWORK, err?.message || 'AI detector unreachable.', { retryable: true });
+    }
 }
 
 function assertShape(json) {
-    const ok =
-        json &&
-        typeof json === 'object' &&
-        typeof json.result === 'string' &&
-        Number.isFinite(Number(json.confidence)) &&
-        typeof json.model_version === 'string';
-    if (!ok) {
+    if (!json || typeof json !== 'object') {
         throw new AiGenError(ERR.SHAPE, 'The detector returned an unexpected response.', {
             retryable: true,
         });
     }
+
+    const isAi = Boolean(json.is_ai_generated);
+    const prob = Number(json.ai_generated_probability ?? json.confidence ?? 0);
+    const result = json.result || (isAi ? 'Likely AI Generated' : 'Authentic / Real Image');
+    const modelVersion = json.model_version || 'SPAI Detector v1.0';
+
     return {
-        result: json.result,
-        confidence: Number(json.confidence),
-        model_version: json.model_version,
+        result,
+        confidence: prob,
+        model_version: modelVersion,
+        is_ai_generated: isAi,
+        filename: json.filename,
     };
 }
 
@@ -219,13 +214,11 @@ export const UPLOAD_COPY = Object.freeze({
 });
 
 export function buildResults(meta, server) {
-    const confidence = clamp01(Number(server.confidence));
-    const percent = Math.round(confidence * 100);
-    const result = String(server.result ?? '').trim();
-
-    const negative = /(unlikely|not ai|authentic|real|human|organic)/i.test(result);
-    const aiSide = !negative && /(ai|generated|deepfake|synthetic|fake)/i.test(result);
-    const tone = confidence < 0.55 ? 'warn' : aiSide ? 'danger' : 'accent';
+    const isAi = Boolean(server.is_ai_generated);
+    const aiProb = clamp01(Number(server.confidence));
+    const percent = isAi ? Math.max(50, Math.round(aiProb * 100)) : Math.max(50, Math.round((1 - aiProb) * 100));
+    const result = isAi ? 'Likely AI Generated' : 'Authentic / Real Image';
+    const tone = isAi ? 'danger' : 'accent';
 
     const rows = [
         { key: 'name', label: 'Image name', value: meta.name, source: 'device' },
@@ -233,7 +226,7 @@ export function buildResults(meta, server) {
         { key: 'dims', label: 'Dimensions', value: `${meta.width} × ${meta.height}`, source: 'device' },
         { key: 'size', label: 'File size', value: formatBytes(meta.size), source: 'device' },
         { key: 'result', label: 'Result', value: result, source: 'server' },
-        { key: 'confidence', label: 'Confidence', value: `${percent}%`, source: 'server' },
+        { key: 'confidence', label: isAi ? 'AI Probability' : 'Authenticity Confidence', value: `${percent}%`, source: 'server' },
         { key: 'model', label: 'Model version', value: String(server.model_version), source: 'server' },
     ];
 

@@ -1,4 +1,5 @@
 import { NativeModules, DeviceEventEmitter } from 'react-native';
+import { checkIpsApi } from '../../apiConfig';
 
 export const MINUTE_MS = 60000;
 export const RING_MS = 3 * 24 * 60 * MINUTE_MS;
@@ -64,6 +65,10 @@ class NetworkStore {
         this.minutes = new Map();
         this.monitoredAll = true;
         this.monitored = new Set();
+        this.maliciousIps = new Set();
+        this.checkedIps = new Set();
+        this._pendingIps = new Set();
+        this._checkTimer = null;
         this._listeners = new Set();
         this._queued = false;
         if (Bridge) {
@@ -137,11 +142,67 @@ class NetworkStore {
             a = {
                 uid, pkg: base.pkg || '', label: base.label || `UID ${uid}`, icon: base.icon || null,
                 conns: 0, total: 0, bytes: 0, firstSeen: 0, lastSeen: 0, clear: false,
+                hasMalicious: false, maliciousIps: new Set(),
             };
             this.apps.set(uid, a);
             if (this.monitoredAll) this.monitored.add(uid);
         }
         return a;
+    }
+
+    _scheduleIpCheck() {
+        if (this._checkTimer) return;
+        this._checkTimer = setTimeout(() => {
+            this._checkTimer = null;
+            this._flushPendingIps();
+        }, 800);
+    }
+
+    async _flushPendingIps() {
+        if (this._pendingIps.size === 0) return;
+        const ipsToCheck = Array.from(this._pendingIps).slice(0, 50);
+        ipsToCheck.forEach((ip) => {
+            this._pendingIps.delete(ip);
+            this.checkedIps.add(ip);
+        });
+
+        try {
+            const { matched } = await checkIpsApi(ipsToCheck);
+            if (Array.isArray(matched) && matched.length > 0) {
+                let changed = false;
+                matched.forEach((badIp) => {
+                    this.maliciousIps.add(badIp);
+                });
+                this.endpoints.forEach((ep) => {
+                    if (this.maliciousIps.has(ep.ip)) {
+                        ep.isMalicious = true;
+                        const app = this.apps.get(ep.uid);
+                        if (app) {
+                            app.hasMalicious = true;
+                            if (!app.maliciousIps) app.maliciousIps = new Set();
+                            app.maliciousIps.add(ep.ip);
+                        }
+                        changed = true;
+                    }
+                });
+                if (changed) this._emit();
+            }
+        } catch (err) {
+            console.warn('IP validation background check failed:', err);
+        }
+
+        if (this._pendingIps.size > 0) {
+            setTimeout(() => this._flushPendingIps(), 1500);
+        }
+    }
+
+    isMalicious(ip) {
+        return Boolean(ip && this.maliciousIps.has(ip));
+    }
+
+    hasMalicious(uid) {
+        const app = this.apps.get(uid);
+        return Boolean(app && app.hasMalicious);
     }
 
     _ingest(batch) {
@@ -161,14 +222,29 @@ class NetworkStore {
         const cat = catOf(ev);
         if (cat === 'clear') app.clear = true;
 
+        if (ev.ip && !this.checkedIps.has(ev.ip)) {
+            this._pendingIps.add(ev.ip);
+            this._scheduleIpCheck();
+        }
+
+        const isBad = Boolean(ev.ip && this.maliciousIps.has(ev.ip));
+        if (isBad) {
+            app.hasMalicious = true;
+            if (!app.maliciousIps) app.maliciousIps = new Set();
+            app.maliciousIps.add(ev.ip);
+        }
+
         const key = `${ev.uid}|${ev.ip}|${ev.proto}`;
         let ep = this.endpoints.get(key);
         if (!ep) {
             ep = {
                 uid: ev.uid, ip: ev.ip, proto: ev.proto, port: ev.port, domain: ev.domain || null,
                 src: ev.src || null, count: 0, open: 0, bytes: 0, firstTs: ts, lastTs: ts, recent: [],
+                isMalicious: isBad,
             };
             this.endpoints.set(key, ep);
+        } else if (isBad) {
+            ep.isMalicious = true;
         }
         ep.count++; ep.open++; ep.lastTs = ts; ep.port = ev.port;
         if (ev.domain) { ep.domain = ev.domain; ep.src = ev.src; }
@@ -176,7 +252,7 @@ class NetworkStore {
         if (ep.recent.length > 12) ep.recent.pop();
 
         this._minute(ev.uid, Math.floor(ts / MINUTE_MS), cat);
-        this.events.push({ ...ev, ts, cat });
+        this.events.push({ ...ev, ts, cat, isMalicious: isBad });
     }
     _close(ev, now) {
         const app = this.apps.get(ev.uid);
@@ -212,6 +288,7 @@ class NetworkStore {
             apps: this.apps.size,
             monitored: this.monitoredAll ? this.apps.size : this.monitored.size,
             live, events: this.events.length,
+            maliciousIps: this.maliciousIps.size,
         };
     }
 

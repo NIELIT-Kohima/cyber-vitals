@@ -26,18 +26,20 @@ class AppHashModule(private val reactContext: ReactApplicationContext) :
                     .distinctBy { it.packageName }
 
                 val total = apps.size
-                val digest = MessageDigest.getInstance("MD5")
+                val md5Digest = MessageDigest.getInstance("MD5")
+                val sha256Digest = MessageDigest.getInstance("SHA-256")
                 val out = Arguments.createArray()
                 var done = 0
 
                 for (app in apps) {
                     done++
-                    val md5 = runCatching { md5Of(app.sourceDir, digest) }.getOrNull()
+                    val hashes = runCatching { hashesOf(app.sourceDir, md5Digest, sha256Digest) }.getOrNull()
                     emitProgress(done, total)
-                    if (md5 == null) continue
+                    if (hashes == null) continue
                     out.pushMap(Arguments.createMap().apply {
                         putString("package_name", app.packageName)
-                        putString("md5", md5)
+                        putString("md5", hashes.first)
+                        putString("sha256", hashes.second)
                     })
                 }
                 promise.resolve(out)
@@ -47,17 +49,21 @@ class AppHashModule(private val reactContext: ReactApplicationContext) :
         }.start()
     }
 
-    private fun md5Of(path: String, digest: MessageDigest): String {
-        digest.reset()
+    private fun hashesOf(path: String, md5Digest: MessageDigest, sha256Digest: MessageDigest): Pair<String, String> {
+        md5Digest.reset()
+        sha256Digest.reset()
         FileInputStream(path).use { stream ->
             val buf = ByteArray(64 * 1024)
             while (true) {
                 val n = stream.read(buf)
                 if (n <= 0) break
-                digest.update(buf, 0, n)
+                md5Digest.update(buf, 0, n)
+                sha256Digest.update(buf, 0, n)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        val md5 = md5Digest.digest().joinToString("") { "%02x".format(it) }
+        val sha256 = sha256Digest.digest().joinToString("") { "%02X".format(it) }
+        return Pair(md5, sha256)
     }
 
     private fun emitProgress(done: Int, total: Int) {
